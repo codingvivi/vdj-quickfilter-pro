@@ -1,5 +1,4 @@
 #include "MyPlugin8.h"
-#include <algorithm>
 #include <cstdio>
 #include <regex>
 #include <set>
@@ -189,8 +188,7 @@ void CMyPlugin8::RebuildEnergyFilter()
 	std::set<int> deltas;
 	for (int d = 1; d <= m_PosPeakHs; ++d) deltas.insert(d);
 	for (int d = 1; d <= m_NegPeakHs; ++d) deltas.insert(-d);
-	// 0 is implicit whenever either side has a range; only the explicit zero button can hold it alone
-	if (m_ZeroEngaged || m_PosPeakHs > 0 || m_NegPeakHs > 0) deltas.insert(0);
+	if (m_ZeroEngaged) deltas.insert(0);
 
 	// nothing engaged → disengage VDJ-side too
 	if (deltas.empty()) {
