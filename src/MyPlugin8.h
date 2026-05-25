@@ -18,6 +18,7 @@ public:
 private:
 	int m_Btn1State;
 	int m_EnergyBtns[ENERGY_BTN_COUNT];
+	std::string m_ActiveFilter; // last quick_filter expression we sent that's still engaged in VDJ
 
 	int GetMasterDeck(); // returns 1-4 for the current master deck, or 0 if none
 	std::string GetMasterDeckComment(); // comment of the track on the master deck

@@ -105,7 +105,18 @@ std::string CMyPlugin8::GetMasterDeckComment()
 void CMyPlugin8::SendCommentTagFilter(const std::string& name, const std::string& value)
 {
 	std::string cmd = "quick_filter 'Comment has tag #" + value + name + "'";
+
+	// re-sending the same expression toggles VDJ's filter off — use that to clear the previous one
+	if (!m_ActiveFilter.empty()) SendCommand(m_ActiveFilter.c_str());
+
+	if (cmd == m_ActiveFilter) {
+		// user pressed the same button — we just disengaged it, leave it off
+		m_ActiveFilter.clear();
+		return;
+	}
+
 	SendCommand(cmd.c_str());
+	m_ActiveFilter = cmd;
 }
 
 //---------------------------------------------------------------------------
