@@ -44,41 +44,64 @@ Because the numeric form is the common one users will type, the `ID_BUTTON_N` id
 
 ## Current button layout & behavior
 
-Buttons are declared in `MyPlugin8.cpp::OnLoad` in this order (= UI order = mapping number):
+102 buttons total: 2 control + 4 tag banks × 25. Declared in `MyPlugin8.cpp::OnLoad` in UI order = mapping number.
 
-| # | Name (short = long) | Behavior |
+| Buttons | Group | Behavior |
 |---|---|---|
-| 1 | `RFR` (long: "Refresh Quick Filters") | (TODO) disengage + re-engage active filter against the master deck. |
-| 2 | `Kill` (long: "Kill Quick Filter") | Sends `quick_filter off`, clears `m_ActiveFilter` cache, resets both range and stack state. |
-| 3–15 | `E>=N.N`, `E=0`, `E=<N.N` | **Range mode.** See below. |
-| 16–28 | `E+N.N`, `E0`, `E-N.N` | **Stack mode.** See below. |
+| 1 | `RFR` "Refresh Quick Filters" | (TODO) disengage + re-engage active filter against the master deck. |
+| 2 | `Kill` "Kill Quick Filter" | Sends `quick_filter off`, clears `m_ActiveFilter` cache, calls `Clear()` on every bank. |
+| 3–27 | Energy bank (`E>=N.N`, `E=<N.N`, `E+N.N`, `E0`, `E-N.N`) | Range 3–14, Stack 15–27. |
+| 28–52 | Happy bank (`H...`) | Range 28–39, Stack 40–52. |
+| 53–77 | Dance bank (`D...`) | Range 53–64, Stack 65–77. |
+| 78–102 | Pop bank (`P...`) | Range 78–89, Stack 90–102. |
 
-Both modes target the master deck's `#NNEnergy` tag (parsed via `GetNumericTag("Energy")`) and produce a `quick_filter '<OR-joined clauses>'` expression. The two modes are mutually exclusive — pressing a button in one mode clears the other.
+Each bank targets one numeric tag in the master deck's comment (e.g. `#03Energy`), parsed by `GetNumericTag(tagName)`. Within a bank, range and stack are mutually exclusive; across banks, contributions are AND-joined into a single `quick_filter` expression.
 
-### Range mode (buttons 3–15)
+### TagBank (struct in MyPlugin8.h)
 
-Three independent pieces of state: `m_PosPeakHs` (positive ceiling in half-steps), `m_NegPeakHs` (negative ceiling), `m_ZeroEngaged` (the `=0` toggle).
+State-only, no SDK calls. Each instance owns:
+- `tagName` — e.g. "Energy".
+- `rangeBtns[12]`, `stackBtns[13]` — SDK-owned momentary press state.
+- `posPeakHs`, `negPeakHs` — current range peak per side, in half-steps (0..6).
+- `stackEngaged[13]` — per-button latch for stack mode.
 
-- Press `>=N` → `m_PosPeakHs = N*2`, overwriting any prior positive peak. Filter includes half-steps `1..PosPeakHs` (i.e. master+0.5 .. master+N).
-- Press the current positive peak again → `m_PosPeakHs = 0`, positive side cleared. Negative side and `=0` untouched.
-- Same rules mirrored for `=<N` / `m_NegPeakHs`.
-- `=0` toggles `m_ZeroEngaged`, fully independent of either side — does **not** get added or removed when range buttons are pressed.
+Methods: `Init`, `Clear`, `HandleRangePress(idx)`, `HandleStackPress(idx)`, `AnyRangeEngaged`, `AnyStackEngaged`, `AnyEngaged`, `ComputeDeltas()` (returns the union of half-step offsets relative to master).
 
-### Stack mode (buttons 16–28)
+### Range mode (12 buttons per bank, no `=0`)
 
-Per-button latched state in `m_StackEngaged[ENERGY_BTN_COUNT]`. Each engaged button contributes only its own single half-step value (not a range). Press toggles its own state, leaves others alone.
+- Press `>=N` → `posPeakHs = N*2`, overwriting any prior positive peak. Contribution: half-steps `1..posPeakHs` (= master+0.5 .. master+N). Master itself is NOT included.
+- Press the current positive peak again → `posPeakHs = 0`, positive side cleared. Negative side untouched.
+- Same rules mirrored for `=<N` / `negPeakHs`.
+- There is no range `=0` button — the stack `0` button is the only way to engage just the master value.
 
-### Mutual exclusion
+### Stack mode (13 buttons per bank, includes `0`)
 
-`OnParameter` enforces it at dispatch:
-- Range press while `AnyStackEngaged()` → `ClearStackState()` first, then handle the range press.
-- Stack press while `AnyRangeEngaged()` → `ClearRangeState()` first, then handle the stack press.
+Per-button latch in `stackEngaged[i]`. Each engaged button contributes only its single half-step value (not a range). Press toggles. The `0` button contributes the master value itself.
 
-`RebuildEnergyFilter` unions both contributions into a `std::set<int>` of half-step deltas, formats each as `#<value>Energy` via `formatTagValue` (preserving the master tag's zero-padding width for integer values, `%g` for fractional), wraps with `BuildOrExpression`, and dispatches via `SendFilterExpression`.
+### Mutual exclusion (within a bank)
+
+`HandleRangePress` clears `stackEngaged[]` first if any stack is on. `HandleStackPress` clears `posPeakHs`/`negPeakHs` first if any range is on. The other banks are untouched.
+
+### Combining across banks (AND)
+
+`CMyPlugin8::RebuildFilter`:
+1. Iterates `m_banks`. For each engaged bank, reads its master value via `GetNumericTag(bank.tagName)`, asks for its `ComputeDeltas()`, formats each delta into `Comment has tag #<value><tagName>` via `formatTagValue` + `commentTagClause`, joins with `or` via `buildOrExpression`.
+2. AND-joins all per-bank expressions: `(bankA OR-clauses) and (bankB OR-clauses)`.
+3. Dispatches via `SendFilterExpression`.
+
+If no bank is engaged → re-sends the cached filter to clear and empties the cache.
 
 ### Active-filter tracking
 
 `m_ActiveFilter` caches the last `quick_filter '<expr>'` string sent. To swap filters, `SendFilterExpression` re-sends the cached string (VDJ toggles same-expression off), then sends the new one. Same-expression re-send disengages without replacing. `quick_filter off` alone did **not** reliably clear custom expressions in testing, hence the cache-based dance.
+
+### Adding more banks
+
+1. Bump `CMyPlugin8::BANK_COUNT` in `MyPlugin8.h`.
+2. Append the tag name to `BANK_TAG_NAMES` in `MyPlugin8.cpp` (first character becomes the label prefix).
+3. Extend the `ID_Interface` enum with 25 more sequential `ID_BUTTON_N` entries (with `// range` and `// stack` section markers).
+
+No changes to dispatch, mutual exclusion, or AND-combine — they scale on `BANK_COUNT`.
 
 ## Stability rules
 

@@ -2,23 +2,29 @@
 #include <cstdio>
 #include <regex>
 
-// Per-button half-step offset table; index 0 = +3.0 (peak), index 12 = -3.0.
-static const float BTN_OFFSETS[TagBank::MODE_BTN_COUNT] = {
+// Range offsets (12 entries — no 0); index 0 = +3.0 peak, index 11 = -3.0.
+static const float RANGE_OFFSETS[TagBank::RANGE_BTN_COUNT] = {
+	 3.0f,  2.5f,  2.0f,  1.5f,  1.0f,  0.5f,
+	-0.5f, -1.0f, -1.5f, -2.0f, -2.5f, -3.0f
+};
+
+// Stack offsets (13 entries — includes 0); index 0 = +3.0, index 6 = 0, index 12 = -3.0.
+static const float STACK_OFFSETS[TagBank::STACK_BTN_COUNT] = {
 	 3.0f,  2.5f,  2.0f,  1.5f,  1.0f,  0.5f,  0.0f,
 	-0.5f, -1.0f, -1.5f, -2.0f, -2.5f, -3.0f
 };
 
-static const char* RANGE_SUFFIX[TagBank::MODE_BTN_COUNT] = {
-	">=3.0", ">=2.5", ">=2.0", ">=1.5", ">=1.0", ">=0.5", "=0",
+static const char* RANGE_SUFFIX[TagBank::RANGE_BTN_COUNT] = {
+	">=3.0", ">=2.5", ">=2.0", ">=1.5", ">=1.0", ">=0.5",
 	"=<0.5", "=<1.0", "=<1.5", "=<2.0", "=<2.5", "=<3.0"
 };
 
-static const char* STACK_SUFFIX[TagBank::MODE_BTN_COUNT] = {
+static const char* STACK_SUFFIX[TagBank::STACK_BTN_COUNT] = {
 	"+3.0", "+2.5", "+2.0", "+1.5", "+1.0", "+0.5", "0",
 	"-0.5", "-1.0", "-1.5", "-2.0", "-2.5", "-3.0"
 };
 
-// Bank tag names, in display order. BANK_COUNT controls how many are wired.
+// Bank tag names, in display order.
 static const char* BANK_TAG_NAMES[CMyPlugin8::BANK_COUNT] = {
 	"Energy",
 	"Happy",
@@ -26,12 +32,12 @@ static const char* BANK_TAG_NAMES[CMyPlugin8::BANK_COUNT] = {
 	"Pop"
 };
 
-// First char of the tag name is used as the button-label prefix (e.g. "E>=3.0", "H+1.5").
-// Storage for the per-button labels — must outlive the SDK call, so file-scope static.
-static char g_rangeLongNames [CMyPlugin8::BANK_COUNT][TagBank::MODE_BTN_COUNT][16];
-static char g_rangeShortNames[CMyPlugin8::BANK_COUNT][TagBank::MODE_BTN_COUNT][16];
-static char g_stackLongNames [CMyPlugin8::BANK_COUNT][TagBank::MODE_BTN_COUNT][16];
-static char g_stackShortNames[CMyPlugin8::BANK_COUNT][TagBank::MODE_BTN_COUNT][16];
+// First char of the tag name is used as the label prefix (e.g. "E>=3.0", "H+1.5").
+// Storage for the per-button labels — must outlive the SDK call, hence file-scope static.
+static char g_rangeLongNames [CMyPlugin8::BANK_COUNT][TagBank::RANGE_BTN_COUNT][16];
+static char g_rangeShortNames[CMyPlugin8::BANK_COUNT][TagBank::RANGE_BTN_COUNT][16];
+static char g_stackLongNames [CMyPlugin8::BANK_COUNT][TagBank::STACK_BTN_COUNT][16];
+static char g_stackShortNames[CMyPlugin8::BANK_COUNT][TagBank::STACK_BTN_COUNT][16];
 
 static std::string formatTagValue(double n, int width, bool sourceHasDecimal)
 {
@@ -70,30 +76,25 @@ void TagBank::Init(const std::string& name)
 	tagName = name;
 	posPeakHs = 0;
 	negPeakHs = 0;
-	zeroEngaged = false;
-	for (int i = 0; i < MODE_BTN_COUNT; ++i) {
-		rangeBtns[i] = 0;
-		stackBtns[i] = 0;
-		stackEngaged[i] = false;
-	}
+	for (int i = 0; i < RANGE_BTN_COUNT; ++i) rangeBtns[i] = 0;
+	for (int i = 0; i < STACK_BTN_COUNT; ++i) { stackBtns[i] = 0; stackEngaged[i] = false; }
 }
 
 void TagBank::Clear()
 {
 	posPeakHs = 0;
 	negPeakHs = 0;
-	zeroEngaged = false;
-	for (int i = 0; i < MODE_BTN_COUNT; ++i) stackEngaged[i] = false;
+	for (int i = 0; i < STACK_BTN_COUNT; ++i) stackEngaged[i] = false;
 }
 
 bool TagBank::AnyRangeEngaged() const
 {
-	return posPeakHs > 0 || negPeakHs > 0 || zeroEngaged;
+	return posPeakHs > 0 || negPeakHs > 0;
 }
 
 bool TagBank::AnyStackEngaged() const
 {
-	for (int i = 0; i < MODE_BTN_COUNT; ++i)
+	for (int i = 0; i < STACK_BTN_COUNT; ++i)
 		if (stackEngaged[i]) return true;
 	return false;
 }
@@ -101,15 +102,14 @@ bool TagBank::AnyStackEngaged() const
 void TagBank::HandleRangePress(int idx)
 {
 	if (AnyStackEngaged()) {
-		for (int i = 0; i < MODE_BTN_COUNT; ++i) stackEngaged[i] = false;
+		for (int i = 0; i < STACK_BTN_COUNT; ++i) stackEngaged[i] = false;
 	}
 
-	float off = BTN_OFFSETS[idx];
+	float off = RANGE_OFFSETS[idx];
 	int hs = (int)((off < 0 ? -off : off) * 2);
 
-	if (off > 0)      posPeakHs   = (posPeakHs == hs) ? 0 : hs;
-	else if (off < 0) negPeakHs   = (negPeakHs == hs) ? 0 : hs;
-	else              zeroEngaged = !zeroEngaged;
+	if (off > 0) posPeakHs = (posPeakHs == hs) ? 0 : hs;
+	else         negPeakHs = (negPeakHs == hs) ? 0 : hs;
 }
 
 void TagBank::HandleStackPress(int idx)
@@ -117,7 +117,6 @@ void TagBank::HandleStackPress(int idx)
 	if (AnyRangeEngaged()) {
 		posPeakHs = 0;
 		negPeakHs = 0;
-		zeroEngaged = false;
 	}
 	stackEngaged[idx] = !stackEngaged[idx];
 }
@@ -127,11 +126,10 @@ std::set<int> TagBank::ComputeDeltas() const
 	std::set<int> deltas;
 	for (int d = 1; d <= posPeakHs; ++d) deltas.insert(d);
 	for (int d = 1; d <= negPeakHs; ++d) deltas.insert(-d);
-	if (zeroEngaged) deltas.insert(0);
 
-	for (int i = 0; i < MODE_BTN_COUNT; ++i) {
+	for (int i = 0; i < STACK_BTN_COUNT; ++i) {
 		if (!stackEngaged[i]) continue;
-		float off = BTN_OFFSETS[i];
+		float off = STACK_OFFSETS[i];
 		int hs = (int)((off < 0 ? -off : off) * 2);
 		if      (off > 0) deltas.insert(hs);
 		else if (off < 0) deltas.insert(-hs);
@@ -153,20 +151,20 @@ HRESULT VDJ_API CMyPlugin8::OnLoad()
 
 	for (int b = 0; b < BANK_COUNT; ++b) {
 		m_banks[b].Init(BANK_TAG_NAMES[b]);
-		char prefix = BANK_TAG_NAMES[b][0]; // 'E', 'H', etc.
+		char prefix = BANK_TAG_NAMES[b][0]; // 'E', 'H', 'D', 'P'
 		int bankBase = FIRST_BANK_ID + b * TagBank::TOTAL_BTN_COUNT;
 
-		for (int i = 0; i < TagBank::MODE_BTN_COUNT; ++i) {
+		for (int i = 0; i < TagBank::RANGE_BTN_COUNT; ++i) {
 			snprintf(g_rangeLongNames [b][i], 16, "%c%s", prefix, RANGE_SUFFIX[i]);
 			snprintf(g_rangeShortNames[b][i], 16, "%c%s", prefix, RANGE_SUFFIX[i]);
 			DeclareParameterButton(&m_banks[b].rangeBtns[i], bankBase + i,
 			                       g_rangeLongNames[b][i], g_rangeShortNames[b][i]);
 		}
-		for (int i = 0; i < TagBank::MODE_BTN_COUNT; ++i) {
+		for (int i = 0; i < TagBank::STACK_BTN_COUNT; ++i) {
 			snprintf(g_stackLongNames [b][i], 16, "%c%s", prefix, STACK_SUFFIX[i]);
 			snprintf(g_stackShortNames[b][i], 16, "%c%s", prefix, STACK_SUFFIX[i]);
 			DeclareParameterButton(&m_banks[b].stackBtns[i],
-			                       bankBase + TagBank::MODE_BTN_COUNT + i,
+			                       bankBase + TagBank::RANGE_BTN_COUNT + i,
 			                       g_stackLongNames[b][i], g_stackShortNames[b][i]);
 		}
 	}
@@ -222,8 +220,8 @@ HRESULT VDJ_API CMyPlugin8::OnParameter(int id)
 
 	int bankIdx     = rel / TagBank::TOTAL_BTN_COUNT;
 	int withinBank  = rel % TagBank::TOTAL_BTN_COUNT;
-	bool isStack    = withinBank >= TagBank::MODE_BTN_COUNT;
-	int modeIdx     = isStack ? withinBank - TagBank::MODE_BTN_COUNT : withinBank;
+	bool isStack    = withinBank >= TagBank::RANGE_BTN_COUNT;
+	int modeIdx     = isStack ? withinBank - TagBank::RANGE_BTN_COUNT : withinBank;
 	TagBank& bank   = m_banks[bankIdx];
 
 	int sdkState = isStack ? bank.stackBtns[modeIdx] : bank.rangeBtns[modeIdx];
@@ -330,4 +328,3 @@ void CMyPlugin8::RebuildFilter()
 
 	SendFilterExpression(expr);
 }
-
