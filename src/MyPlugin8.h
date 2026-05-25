@@ -19,12 +19,21 @@ public:
 private:
 	int m_Btn1State;
 	int m_KillState;
-	int m_EnergyBtns[ENERGY_BTN_COUNT]; // momentary SDK-owned button press state
-	// engaged range state, expressed as half-step magnitudes. A side is "off" when its peak is 0.
-	// Pressing a button on a side either raises its peak (if different) or clears it (if same).
-	int  m_PosPeakHs;     // 0..6 (0 means no positive side engaged)
-	int  m_NegPeakHs;     // 0..6 (0 means no negative side engaged)
-	bool m_ZeroEngaged;   // explicit press of the 0 button keeps 0 in the active set
+	int m_RangeBtns[ENERGY_BTN_COUNT]; // momentary SDK state for range buttons
+	int m_StackBtns[ENERGY_BTN_COUNT]; // momentary SDK state for stack buttons
+
+	// Range mode: each side has a single "peak" half-step magnitude. Pressing raises (overwrite) or clears (if same).
+	int  m_PosPeakHs;     // 0..6 (0 = positive side off)
+	int  m_NegPeakHs;     // 0..6 (0 = negative side off)
+	bool m_ZeroEngaged;   // master value, toggled by the range 0 button only
+
+	// Stack mode: each button independently latches; contributes only its single half-step value.
+	bool m_StackEngaged[ENERGY_BTN_COUNT];
+
+	void ClearRangeState();
+	void ClearStackState();
+	bool AnyRangeEngaged() const;
+	bool AnyStackEngaged() const;
 	std::string m_ActiveFilter; // last quick_filter expression we sent that's still engaged in VDJ
 
 	int GetMasterDeck(); // returns 1-4 for the current master deck, or 0 if none
@@ -43,19 +52,32 @@ protected:
 	{
 		ID_BUTTON_1,  // refresh
 		ID_BUTTON_2,  // kill
-		ID_BUTTON_3,  // Energy +3.0
-		ID_BUTTON_4,  // Energy +2.5
-		ID_BUTTON_5,  // Energy +2.0
-		ID_BUTTON_6,  // Energy +1.5
-		ID_BUTTON_7,  // Energy +1.0
-		ID_BUTTON_8,  // Energy +0.5
-		ID_BUTTON_9,  // Energy  0.0
-		ID_BUTTON_10, // Energy -0.5
-		ID_BUTTON_11, // Energy -1.0
-		ID_BUTTON_12, // Energy -1.5
-		ID_BUTTON_13, // Energy -2.0
-		ID_BUTTON_14, // Energy -2.5
-		ID_BUTTON_15  // Energy -3.0
+		ID_BUTTON_3,  // Range +3.0
+		ID_BUTTON_4,  // Range +2.5
+		ID_BUTTON_5,  // Range +2.0
+		ID_BUTTON_6,  // Range +1.5
+		ID_BUTTON_7,  // Range +1.0
+		ID_BUTTON_8,  // Range +0.5
+		ID_BUTTON_9,  // Range  0.0
+		ID_BUTTON_10, // Range -0.5
+		ID_BUTTON_11, // Range -1.0
+		ID_BUTTON_12, // Range -1.5
+		ID_BUTTON_13, // Range -2.0
+		ID_BUTTON_14, // Range -2.5
+		ID_BUTTON_15, // Range -3.0
+		ID_BUTTON_16, // Stack +3.0
+		ID_BUTTON_17, // Stack +2.5
+		ID_BUTTON_18, // Stack +2.0
+		ID_BUTTON_19, // Stack +1.5
+		ID_BUTTON_20, // Stack +1.0
+		ID_BUTTON_21, // Stack +0.5
+		ID_BUTTON_22, // Stack  0.0
+		ID_BUTTON_23, // Stack -0.5
+		ID_BUTTON_24, // Stack -1.0
+		ID_BUTTON_25, // Stack -1.5
+		ID_BUTTON_26, // Stack -2.0
+		ID_BUTTON_27, // Stack -2.5
+		ID_BUTTON_28  // Stack -3.0
 	} ID_Interface;
 };
 

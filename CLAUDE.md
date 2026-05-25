@@ -42,6 +42,44 @@ The VDJ SDK in `external/sdk/` is a COM-style C++ interface. `Main.cpp` exports 
 
 Because the numeric form is the common one users will type, the `ID_BUTTON_N` identifier number must match the 1-based mapping number — that's why the sequential naming convention is load-bearing, not cosmetic.
 
+## Current button layout & behavior
+
+Buttons are declared in `MyPlugin8.cpp::OnLoad` in this order (= UI order = mapping number):
+
+| # | Short | Long | Behavior |
+|---|---|---|---|
+| 1 | `RFR` | Refresh Quick Filters | (TODO) disengage + re-engage active filter against the master deck. |
+| 2 | `Kill` | Kill Quick Filter | Sends `quick_filter off`, clears `m_ActiveFilter` cache, resets both range and stack state. |
+| 3–15 | `>=N.N`, `=0`, `=<N.N` | Energy >=N.N / =0 / =<N.N | **Range mode.** See below. |
+| 16–28 | `+N.N`, `0`, `-N.N` | Energy +N.N / 0 / -N.N | **Stack mode.** See below. |
+
+Both modes target the master deck's `#NNEnergy` tag (parsed via `GetNumericTag("Energy")`) and produce a `quick_filter '<OR-joined clauses>'` expression. The two modes are mutually exclusive — pressing a button in one mode clears the other.
+
+### Range mode (buttons 3–15)
+
+Three independent pieces of state: `m_PosPeakHs` (positive ceiling in half-steps), `m_NegPeakHs` (negative ceiling), `m_ZeroEngaged` (the `=0` toggle).
+
+- Press `>=N` → `m_PosPeakHs = N*2`, overwriting any prior positive peak. Filter includes half-steps `1..PosPeakHs` (i.e. master+0.5 .. master+N).
+- Press the current positive peak again → `m_PosPeakHs = 0`, positive side cleared. Negative side and `=0` untouched.
+- Same rules mirrored for `=<N` / `m_NegPeakHs`.
+- `=0` toggles `m_ZeroEngaged`, fully independent of either side — does **not** get added or removed when range buttons are pressed.
+
+### Stack mode (buttons 16–28)
+
+Per-button latched state in `m_StackEngaged[ENERGY_BTN_COUNT]`. Each engaged button contributes only its own single half-step value (not a range). Press toggles its own state, leaves others alone.
+
+### Mutual exclusion
+
+`OnParameter` enforces it at dispatch:
+- Range press while `AnyStackEngaged()` → `ClearStackState()` first, then handle the range press.
+- Stack press while `AnyRangeEngaged()` → `ClearRangeState()` first, then handle the stack press.
+
+`RebuildEnergyFilter` unions both contributions into a `std::set<int>` of half-step deltas, formats each as `#<value>Energy` via `formatTagValue` (preserving the master tag's zero-padding width for integer values, `%g` for fractional), wraps with `BuildOrExpression`, and dispatches via `SendFilterExpression`.
+
+### Active-filter tracking
+
+`m_ActiveFilter` caches the last `quick_filter '<expr>'` string sent. To swap filters, `SendFilterExpression` re-sends the cached string (VDJ toggles same-expression off), then sends the new one. Same-expression re-send disengages without replacing. `quick_filter off` alone did **not** reliably clear custom expressions in testing, hence the cache-based dance.
+
 ## Stability rules
 
 - **No exceptions cross the SDK boundary.** The SDK is `HRESULT`-based; an exception unwinding into VDJ's call site aborts the process.

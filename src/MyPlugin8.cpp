@@ -8,16 +8,28 @@ static const float ENERGY_OFFSETS[CMyPlugin8::ENERGY_BTN_COUNT] = {
 	-0.5f, -1.0f, -1.5f, -2.0f, -2.5f, -3.0f
 };
 
-static const char* ENERGY_LONG_NAMES[CMyPlugin8::ENERGY_BTN_COUNT] = {
+static const char* RANGE_LONG_NAMES[CMyPlugin8::ENERGY_BTN_COUNT] = {
+	"Energy >=3.0", "Energy >=2.5", "Energy >=2.0", "Energy >=1.5",
+	"Energy >=1.0", "Energy >=0.5", "Energy =0",
+	"Energy =<0.5", "Energy =<1.0", "Energy =<1.5",
+	"Energy =<2.0", "Energy =<2.5", "Energy =<3.0"
+};
+
+static const char* RANGE_SHORT_NAMES[CMyPlugin8::ENERGY_BTN_COUNT] = {
+	">=3.0", ">=2.5", ">=2.0", ">=1.5", ">=1.0", ">=0.5", "=0",
+	"=<0.5", "=<1.0", "=<1.5", "=<2.0", "=<2.5", "=<3.0"
+};
+
+static const char* STACK_LONG_NAMES[CMyPlugin8::ENERGY_BTN_COUNT] = {
 	"Energy +3.0", "Energy +2.5", "Energy +2.0", "Energy +1.5",
-	"Energy +1.0", "Energy +0.5", "Energy 0.0",
+	"Energy +1.0", "Energy +0.5", "Energy 0",
 	"Energy -0.5", "Energy -1.0", "Energy -1.5",
 	"Energy -2.0", "Energy -2.5", "Energy -3.0"
 };
 
-static const char* ENERGY_SHORT_NAMES[CMyPlugin8::ENERGY_BTN_COUNT] = {
-	"E+3.0", "E+2.5", "E+2.0", "E+1.5", "E+1.0", "E+0.5", "E0",
-	"E-0.5", "E-1.0", "E-1.5", "E-2.0", "E-2.5", "E-3.0"
+static const char* STACK_SHORT_NAMES[CMyPlugin8::ENERGY_BTN_COUNT] = {
+	"+3.0", "+2.5", "+2.0", "+1.5", "+1.0", "+0.5", "0",
+	"-0.5", "-1.0", "-1.5", "-2.0", "-2.5", "-3.0"
 };
 
 //-----------------------------------------------------------------------------
@@ -33,9 +45,16 @@ HRESULT VDJ_API CMyPlugin8::OnLoad()
 	m_ZeroEngaged = false;
 
 	for (int i = 0; i < ENERGY_BTN_COUNT; ++i) {
-		m_EnergyBtns[i] = 0;
-		DeclareParameterButton(&m_EnergyBtns[i], ID_BUTTON_3 + i,
-		                       ENERGY_LONG_NAMES[i], ENERGY_SHORT_NAMES[i]);
+		m_RangeBtns[i] = 0;
+		DeclareParameterButton(&m_RangeBtns[i], ID_BUTTON_3 + i,
+		                       RANGE_LONG_NAMES[i], RANGE_SHORT_NAMES[i]);
+	}
+
+	for (int i = 0; i < ENERGY_BTN_COUNT; ++i) {
+		m_StackBtns[i] = 0;
+		m_StackEngaged[i] = false;
+		DeclareParameterButton(&m_StackBtns[i], ID_BUTTON_16 + i,
+		                       STACK_LONG_NAMES[i], STACK_SHORT_NAMES[i]);
 	}
 
 	return S_OK;
@@ -82,16 +101,18 @@ HRESULT VDJ_API CMyPlugin8::OnParameter(int id)
 		if (m_KillState == 1) {
 			SendCommand("quick_filter off");
 			m_ActiveFilter.clear();
-			m_PosPeakHs = 0;
-			m_NegPeakHs = 0;
-			m_ZeroEngaged = false;
+			ClearRangeState();
+			ClearStackState();
 		}
 		return S_OK;
 	}
 
 	if (id >= ID_BUTTON_3 && id <= ID_BUTTON_15) {
 		int i = id - ID_BUTTON_3;
-		if (m_EnergyBtns[i] != 1) return S_OK;
+		if (m_RangeBtns[i] != 1) return S_OK;
+
+		// pressing a range button while stack is active disables the whole stack
+		if (AnyStackEngaged()) ClearStackState();
 
 		float off = ENERGY_OFFSETS[i];
 		int hs = (int)((off < 0 ? -off : off) * 2);
@@ -101,6 +122,20 @@ HRESULT VDJ_API CMyPlugin8::OnParameter(int id)
 		else              m_ZeroEngaged = !m_ZeroEngaged;
 
 		RebuildEnergyFilter();
+		return S_OK;
+	}
+
+	if (id >= ID_BUTTON_16 && id <= ID_BUTTON_28) {
+		int i = id - ID_BUTTON_16;
+		if (m_StackBtns[i] != 1) return S_OK;
+
+		// pressing a stack button while a range is active disables the whole range
+		if (AnyRangeEngaged()) ClearRangeState();
+
+		m_StackEngaged[i] = !m_StackEngaged[i];
+
+		RebuildEnergyFilter();
+		return S_OK;
 	}
 
 	return S_OK;
@@ -183,12 +218,48 @@ static std::string formatTagValue(double n, int width, bool sourceHasDecimal)
 	return std::string(buf);
 }
 
+void CMyPlugin8::ClearRangeState()
+{
+	m_PosPeakHs = 0;
+	m_NegPeakHs = 0;
+	m_ZeroEngaged = false;
+}
+
+void CMyPlugin8::ClearStackState()
+{
+	for (int i = 0; i < ENERGY_BTN_COUNT; ++i) m_StackEngaged[i] = false;
+}
+
+bool CMyPlugin8::AnyRangeEngaged() const
+{
+	return m_PosPeakHs > 0 || m_NegPeakHs > 0 || m_ZeroEngaged;
+}
+
+bool CMyPlugin8::AnyStackEngaged() const
+{
+	for (int i = 0; i < ENERGY_BTN_COUNT; ++i)
+		if (m_StackEngaged[i]) return true;
+	return false;
+}
+
 void CMyPlugin8::RebuildEnergyFilter()
 {
 	std::set<int> deltas;
+
+	// range contribution (mutually exclusive with stack, but unioning is harmless)
 	for (int d = 1; d <= m_PosPeakHs; ++d) deltas.insert(d);
 	for (int d = 1; d <= m_NegPeakHs; ++d) deltas.insert(-d);
 	if (m_ZeroEngaged) deltas.insert(0);
+
+	// stack contribution: each engaged button adds its single half-step value
+	for (int i = 0; i < ENERGY_BTN_COUNT; ++i) {
+		if (!m_StackEngaged[i]) continue;
+		float off = ENERGY_OFFSETS[i];
+		int hs = (int)((off < 0 ? -off : off) * 2);
+		if      (off > 0) deltas.insert(hs);
+		else if (off < 0) deltas.insert(-hs);
+		else              deltas.insert(0);
+	}
 
 	// nothing engaged → disengage VDJ-side too
 	if (deltas.empty()) {
