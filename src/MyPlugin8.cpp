@@ -73,7 +73,7 @@ HRESULT VDJ_API CMyPlugin8::OnParameter(int id)
 
 	if (id >= ID_BUTTON_2 && id <= ID_BUTTON_14) {
 		int i = id - ID_BUTTON_2;
-		if (m_EnergyBtns[i] == 1) MatchNumericTag("Energy", ENERGY_OFFSETS[i]);
+		if (m_EnergyBtns[i] == 1) MatchNumericTagSpan("Energy", ENERGY_OFFSETS[i]);
 	}
 
 	return S_OK;
@@ -102,15 +102,15 @@ std::string CMyPlugin8::GetMasterDeckComment()
 }
 
 //---------------------------------------------------------------------------
-void CMyPlugin8::SendCommentTagFilter(const std::string& name, const std::string& value)
+void CMyPlugin8::SendFilterExpression(const std::string& expr)
 {
-	std::string cmd = "quick_filter 'Comment has tag #" + value + name + "'";
+	std::string cmd = "quick_filter '" + expr + "'";
 
 	// re-sending the same expression toggles VDJ's filter off — use that to clear the previous one
 	if (!m_ActiveFilter.empty()) SendCommand(m_ActiveFilter.c_str());
 
 	if (cmd == m_ActiveFilter) {
-		// user pressed the same button — we just disengaged it, leave it off
+		// caller asked for the exact same filter — we just disengaged it, leave it off
 		m_ActiveFilter.clear();
 		return;
 	}
@@ -120,20 +120,74 @@ void CMyPlugin8::SendCommentTagFilter(const std::string& name, const std::string
 }
 
 //---------------------------------------------------------------------------
+std::string CMyPlugin8::BuildOrExpression(const std::vector<std::string>& clauses)
+{
+	if (clauses.empty()) return std::string();
+	if (clauses.size() == 1) return clauses[0];
+
+	std::string out;
+	for (size_t i = 0; i < clauses.size(); ++i) {
+		if (i > 0) out += " or ";
+		out += "(" + clauses[i] + ")";
+	}
+	return out;
+}
+
+//---------------------------------------------------------------------------
+std::string CMyPlugin8::CommentTagClause(const std::string& name, const std::string& value)
+{
+	return "Comment has tag #" + value + name;
+}
+
+//---------------------------------------------------------------------------
+void CMyPlugin8::SendCommentTagFilter(const std::string& name, const std::string& value)
+{
+	SendFilterExpression(CommentTagClause(name, value));
+}
+
+//---------------------------------------------------------------------------
+static std::string formatTagValue(double n, int width, bool sourceHasDecimal)
+{
+	char buf[32];
+	if (!sourceHasDecimal && n == (int)n)
+		snprintf(buf, sizeof buf, "%0*d", width, (int)n);
+	else
+		snprintf(buf, sizeof buf, "%g", n);
+	return std::string(buf);
+}
+
 void CMyPlugin8::MatchNumericTag(const std::string& name, float offset)
 {
 	std::string value = GetNumericTag(name);
 	if (value.empty()) return;
 
 	double n = std::stod(value) + offset;
+	std::string formatted = formatTagValue(n, (int)value.size(), value.find('.') != std::string::npos);
 
-	char buf[32];
-	if (value.find('.') == std::string::npos && n == (int)n)
-		snprintf(buf, sizeof buf, "%0*d", (int)value.size(), (int)n);
-	else
-		snprintf(buf, sizeof buf, "%g", n);
+	SendCommentTagFilter(name, formatted);
+}
 
-	SendCommentTagFilter(name, buf);
+void CMyPlugin8::MatchNumericTagSpan(const std::string& name, float offset)
+{
+	std::string master = GetNumericTag(name);
+	if (master.empty()) return;
+
+	double base = std::stod(master);
+	int width = (int)master.size();
+	bool hasDecimal = master.find('.') != std::string::npos;
+
+	float absOffset = offset < 0 ? -offset : offset;
+	float step = offset < 0 ? -0.5f : 0.5f;
+	int steps = (int)(absOffset / 0.5f) + 1;
+
+	std::vector<std::string> clauses;
+	for (int i = 0; i < steps; ++i) {
+		double n = base + step * i;
+		std::string val = formatTagValue(n, width, hasDecimal);
+		clauses.push_back(CommentTagClause(name, val));
+	}
+
+	SendFilterExpression(BuildOrExpression(clauses));
 }
 
 //---------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 
 #include "vdjPlugin8.h"
 #include <string>
+#include <vector>
 
 class CMyPlugin8 : public IVdjPlugin8
 {
@@ -23,8 +24,12 @@ private:
 	int GetMasterDeck(); // returns 1-4 for the current master deck, or 0 if none
 	std::string GetMasterDeckComment(); // comment of the track on the master deck
 	std::string GetNumericTag(const std::string& name); // extracts the NN from a #NN<name> tag in the master comment; empty if none
-	void SendCommentTagFilter(const std::string& name, const std::string& value); // sends quick_filter 'Comment has tag #<value><name>'
+	void SendFilterExpression(const std::string& expr); // wraps expr in `quick_filter '...'`, handles toggle-off of previous via m_ActiveFilter
+	std::string BuildOrExpression(const std::vector<std::string>& clauses); // joins clauses as `(c1) or (c2) or ...`
+	std::string CommentTagClause(const std::string& name, const std::string& value); // builds `Comment has tag #<value><name>`
+	void SendCommentTagFilter(const std::string& name, const std::string& value); // convenience: single-clause comment-tag filter
 	void MatchNumericTag(const std::string& name, float offset); // reads #NN<name> from master comment, adds offset, filters by the new tag
+	void MatchNumericTagSpan(const std::string& name, float offset); // ORs together every value between master and master+offset in 0.5 steps
 
 	bool isMasterFX(); // an example of additional function for the use of GetInfo()
 
