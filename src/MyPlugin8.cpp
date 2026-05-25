@@ -53,7 +53,7 @@ HRESULT VDJ_API CMyPlugin8::OnParameter(int id)
 			break;
 
 		case ID_BUTTON_2:
-			if (m_Btn2State == 1 && FindPopTag() != "")
+			if (m_Btn2State == 1 && !GetNumericTag("Pop").empty())
 				SendCommand("quick_filter 'Comment has tag #00Pop'");
 			break;
 	}
@@ -84,12 +84,12 @@ std::string CMyPlugin8::GetMasterDeckComment()
 }
 
 //---------------------------------------------------------------------------
-std::string CMyPlugin8::FindPopTag()
+std::string CMyPlugin8::GetNumericTag(const std::string& name)
 {
 	std::string comment = GetMasterDeckComment();
 	if (comment.empty()) return std::string();
 
-	static const std::regex pattern(R"(#(\d+(?:\.\d+)?)Pop)");
+	std::regex pattern("#(\\d+(?:\\.\\d+)?)" + name);
 	std::smatch match;
 	if (std::regex_search(comment, match, pattern))
 		return match[1].str();
