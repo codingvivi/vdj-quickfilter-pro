@@ -29,9 +29,12 @@ HRESULT VDJ_API CMyPlugin8::OnLoad()
 	DeclareParameterButton(&m_Btn1State, ID_BUTTON_1, "Refresh Quick Filters", "RFR");
 	DeclareParameterButton(&m_KillState, ID_BUTTON_2, "Kill Quick Filter", "Kill");
 
+	m_PosPeakHs = 0;
+	m_NegPeakHs = 0;
+	m_ZeroEngaged = false;
+
 	for (int i = 0; i < ENERGY_BTN_COUNT; ++i) {
 		m_EnergyBtns[i] = 0;
-		m_EnergyEngaged[i] = false;
 		DeclareParameterButton(&m_EnergyBtns[i], ID_BUTTON_3 + i,
 		                       ENERGY_LONG_NAMES[i], ENERGY_SHORT_NAMES[i]);
 	}
@@ -80,17 +83,25 @@ HRESULT VDJ_API CMyPlugin8::OnParameter(int id)
 		if (m_KillState == 1) {
 			SendCommand("quick_filter off");
 			m_ActiveFilter.clear();
-			for (int i = 0; i < ENERGY_BTN_COUNT; ++i) m_EnergyEngaged[i] = false;
+			m_PosPeakHs = 0;
+			m_NegPeakHs = 0;
+			m_ZeroEngaged = false;
 		}
 		return S_OK;
 	}
 
 	if (id >= ID_BUTTON_3 && id <= ID_BUTTON_15) {
 		int i = id - ID_BUTTON_3;
-		if (m_EnergyBtns[i] == 1) {
-			m_EnergyEngaged[i] = !m_EnergyEngaged[i];
-			RebuildEnergyFilter();
-		}
+		if (m_EnergyBtns[i] != 1) return S_OK;
+
+		float off = ENERGY_OFFSETS[i];
+		int hs = (int)((off < 0 ? -off : off) * 2);
+
+		if (off > 0)      m_PosPeakHs   = (m_PosPeakHs == hs) ? 0 : hs;
+		else if (off < 0) m_NegPeakHs   = (m_NegPeakHs == hs) ? 0 : hs;
+		else              m_ZeroEngaged = !m_ZeroEngaged;
+
+		RebuildEnergyFilter();
 	}
 
 	return S_OK;
@@ -175,15 +186,11 @@ static std::string formatTagValue(double n, int width, bool sourceHasDecimal)
 
 void CMyPlugin8::RebuildEnergyFilter()
 {
-	// collect the union of half-step deltas (relative to master) across all engaged buttons
 	std::set<int> deltas;
-	for (int i = 0; i < ENERGY_BTN_COUNT; ++i) {
-		if (!m_EnergyEngaged[i]) continue;
-		int target = (int)(ENERGY_OFFSETS[i] * 2);
-		int lo = std::min(0, target);
-		int hi = std::max(0, target);
-		for (int d = lo; d <= hi; ++d) deltas.insert(d);
-	}
+	for (int d = 1; d <= m_PosPeakHs; ++d) deltas.insert(d);
+	for (int d = 1; d <= m_NegPeakHs; ++d) deltas.insert(-d);
+	// 0 is implicit whenever either side has a range; only the explicit zero button can hold it alone
+	if (m_ZeroEngaged || m_PosPeakHs > 0 || m_NegPeakHs > 0) deltas.insert(0);
 
 	// nothing engaged → disengage VDJ-side too
 	if (deltas.empty()) {

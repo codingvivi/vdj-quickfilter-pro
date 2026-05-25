@@ -19,8 +19,12 @@ public:
 private:
 	int m_Btn1State;
 	int m_KillState;
-	int m_EnergyBtns[ENERGY_BTN_COUNT];        // momentary SDK-owned button press state
-	bool m_EnergyEngaged[ENERGY_BTN_COUNT];    // which energy buttons are currently latched on (our state)
+	int m_EnergyBtns[ENERGY_BTN_COUNT]; // momentary SDK-owned button press state
+	// engaged range state, expressed as half-step magnitudes. A side is "off" when its peak is 0.
+	// Pressing a button on a side either raises its peak (if different) or clears it (if same).
+	int  m_PosPeakHs;     // 0..6 (0 means no positive side engaged)
+	int  m_NegPeakHs;     // 0..6 (0 means no negative side engaged)
+	bool m_ZeroEngaged;   // explicit press of the 0 button keeps 0 in the active set
 	std::string m_ActiveFilter; // last quick_filter expression we sent that's still engaged in VDJ
 
 	int GetMasterDeck(); // returns 1-4 for the current master deck, or 0 if none
