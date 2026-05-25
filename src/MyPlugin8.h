@@ -20,6 +20,7 @@ private:
 	int GetMasterDeck(); // returns 1-4 for the current master deck, or 0 if none
 	std::string GetMasterDeckComment(); // comment of the track on the master deck
 	std::string GetNumericTag(const std::string& name); // extracts the NN from a #NN<name> tag in the master comment; empty if none
+	void SendCommentTagFilter(const std::string& name, const std::string& value); // sends quick_filter 'Comment has tag #<value><name>'
 
 	bool isMasterFX(); // an example of additional function for the use of GetInfo()
 

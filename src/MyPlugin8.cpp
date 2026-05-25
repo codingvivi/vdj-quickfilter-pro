@@ -53,8 +53,10 @@ HRESULT VDJ_API CMyPlugin8::OnParameter(int id)
 			break;
 
 		case ID_BUTTON_2:
-			if (m_Btn2State == 1 && !GetNumericTag("Pop").empty())
-				SendCommand("quick_filter 'Comment has tag #00Pop'");
+			if (m_Btn2State == 1) {
+				std::string value = GetNumericTag("Pop");
+				if (!value.empty()) SendCommentTagFilter("Pop", value);
+			}
 			break;
 	}
 
@@ -81,6 +83,13 @@ std::string CMyPlugin8::GetMasterDeckComment()
 	char buf[1024] = {0};
 	GetStringInfo(query, buf, sizeof buf);
 	return std::string(buf);
+}
+
+//---------------------------------------------------------------------------
+void CMyPlugin8::SendCommentTagFilter(const std::string& name, const std::string& value)
+{
+	std::string cmd = "quick_filter 'Comment has tag #" + value + name + "'";
+	SendCommand(cmd.c_str());
 }
 
 //---------------------------------------------------------------------------
