@@ -1,6 +1,8 @@
 #include "MyPlugin8.h"
+#include <algorithm>
 #include <cstdio>
 #include <regex>
+#include <set>
 
 static const float ENERGY_OFFSETS[CMyPlugin8::ENERGY_BTN_COUNT] = {
 	 3.0f,  2.5f,  2.0f,  1.5f,  1.0f,  0.5f,  0.0f,
@@ -23,11 +25,14 @@ static const char* ENERGY_SHORT_NAMES[CMyPlugin8::ENERGY_BTN_COUNT] = {
 HRESULT VDJ_API CMyPlugin8::OnLoad()
 {
 	m_Btn1State = 0;
+	m_KillState = 0;
 	DeclareParameterButton(&m_Btn1State, ID_BUTTON_1, "Refresh Quick Filters", "RFR");
+	DeclareParameterButton(&m_KillState, ID_BUTTON_2, "Kill Quick Filter", "Kill");
 
 	for (int i = 0; i < ENERGY_BTN_COUNT; ++i) {
 		m_EnergyBtns[i] = 0;
-		DeclareParameterButton(&m_EnergyBtns[i], ID_BUTTON_2 + i,
+		m_EnergyEngaged[i] = false;
+		DeclareParameterButton(&m_EnergyBtns[i], ID_BUTTON_3 + i,
 		                       ENERGY_LONG_NAMES[i], ENERGY_SHORT_NAMES[i]);
 	}
 
@@ -71,9 +76,21 @@ HRESULT VDJ_API CMyPlugin8::OnParameter(int id)
 		return S_OK;
 	}
 
-	if (id >= ID_BUTTON_2 && id <= ID_BUTTON_14) {
-		int i = id - ID_BUTTON_2;
-		if (m_EnergyBtns[i] == 1) MatchNumericTagSpan("Energy", ENERGY_OFFSETS[i]);
+	if (id == ID_BUTTON_2) {
+		if (m_KillState == 1) {
+			SendCommand("quick_filter off");
+			m_ActiveFilter.clear();
+			for (int i = 0; i < ENERGY_BTN_COUNT; ++i) m_EnergyEngaged[i] = false;
+		}
+		return S_OK;
+	}
+
+	if (id >= ID_BUTTON_3 && id <= ID_BUTTON_15) {
+		int i = id - ID_BUTTON_3;
+		if (m_EnergyBtns[i] == 1) {
+			m_EnergyEngaged[i] = !m_EnergyEngaged[i];
+			RebuildEnergyFilter();
+		}
 	}
 
 	return S_OK;
@@ -156,35 +173,39 @@ static std::string formatTagValue(double n, int width, bool sourceHasDecimal)
 	return std::string(buf);
 }
 
-void CMyPlugin8::MatchNumericTag(const std::string& name, float offset)
+void CMyPlugin8::RebuildEnergyFilter()
 {
-	std::string value = GetNumericTag(name);
-	if (value.empty()) return;
+	// collect the union of half-step deltas (relative to master) across all engaged buttons
+	std::set<int> deltas;
+	for (int i = 0; i < ENERGY_BTN_COUNT; ++i) {
+		if (!m_EnergyEngaged[i]) continue;
+		int target = (int)(ENERGY_OFFSETS[i] * 2);
+		int lo = std::min(0, target);
+		int hi = std::max(0, target);
+		for (int d = lo; d <= hi; ++d) deltas.insert(d);
+	}
 
-	double n = std::stod(value) + offset;
-	std::string formatted = formatTagValue(n, (int)value.size(), value.find('.') != std::string::npos);
+	// nothing engaged → disengage VDJ-side too
+	if (deltas.empty()) {
+		if (!m_ActiveFilter.empty()) {
+			SendCommand(m_ActiveFilter.c_str());
+			m_ActiveFilter.clear();
+		}
+		return;
+	}
 
-	SendCommentTagFilter(name, formatted);
-}
-
-void CMyPlugin8::MatchNumericTagSpan(const std::string& name, float offset)
-{
-	std::string master = GetNumericTag(name);
+	std::string master = GetNumericTag("Energy");
 	if (master.empty()) return;
 
 	double base = std::stod(master);
 	int width = (int)master.size();
 	bool hasDecimal = master.find('.') != std::string::npos;
 
-	float absOffset = offset < 0 ? -offset : offset;
-	float step = offset < 0 ? -0.5f : 0.5f;
-	int steps = (int)(absOffset / 0.5f) + 1;
-
 	std::vector<std::string> clauses;
-	for (int i = 0; i < steps; ++i) {
-		double n = base + step * i;
+	for (int d : deltas) {
+		double n = base + d * 0.5;
 		std::string val = formatTagValue(n, width, hasDecimal);
-		clauses.push_back(CommentTagClause(name, val));
+		clauses.push_back(CommentTagClause("Energy", val));
 	}
 
 	SendFilterExpression(BuildOrExpression(clauses));

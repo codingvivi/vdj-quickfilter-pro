@@ -18,7 +18,9 @@ public:
 
 private:
 	int m_Btn1State;
-	int m_EnergyBtns[ENERGY_BTN_COUNT];
+	int m_KillState;
+	int m_EnergyBtns[ENERGY_BTN_COUNT];        // momentary SDK-owned button press state
+	bool m_EnergyEngaged[ENERGY_BTN_COUNT];    // which energy buttons are currently latched on (our state)
 	std::string m_ActiveFilter; // last quick_filter expression we sent that's still engaged in VDJ
 
 	int GetMasterDeck(); // returns 1-4 for the current master deck, or 0 if none
@@ -28,8 +30,7 @@ private:
 	std::string BuildOrExpression(const std::vector<std::string>& clauses); // joins clauses as `(c1) or (c2) or ...`
 	std::string CommentTagClause(const std::string& name, const std::string& value); // builds `Comment has tag #<value><name>`
 	void SendCommentTagFilter(const std::string& name, const std::string& value); // convenience: single-clause comment-tag filter
-	void MatchNumericTag(const std::string& name, float offset); // reads #NN<name> from master comment, adds offset, filters by the new tag
-	void MatchNumericTagSpan(const std::string& name, float offset); // ORs together every value between master and master+offset in 0.5 steps
+	void RebuildEnergyFilter(); // unions every engaged energy button's value-span and sends the resulting OR expression
 
 	bool isMasterFX(); // an example of additional function for the use of GetInfo()
 
@@ -37,19 +38,20 @@ protected:
 	typedef enum _ID_Interface
 	{
 		ID_BUTTON_1,  // refresh
-		ID_BUTTON_2,  // Energy +3.0
-		ID_BUTTON_3,  // Energy +2.5
-		ID_BUTTON_4,  // Energy +2.0
-		ID_BUTTON_5,  // Energy +1.5
-		ID_BUTTON_6,  // Energy +1.0
-		ID_BUTTON_7,  // Energy +0.5
-		ID_BUTTON_8,  // Energy  0.0
-		ID_BUTTON_9,  // Energy -0.5
-		ID_BUTTON_10, // Energy -1.0
-		ID_BUTTON_11, // Energy -1.5
-		ID_BUTTON_12, // Energy -2.0
-		ID_BUTTON_13, // Energy -2.5
-		ID_BUTTON_14  // Energy -3.0
+		ID_BUTTON_2,  // kill
+		ID_BUTTON_3,  // Energy +3.0
+		ID_BUTTON_4,  // Energy +2.5
+		ID_BUTTON_5,  // Energy +2.0
+		ID_BUTTON_6,  // Energy +1.5
+		ID_BUTTON_7,  // Energy +1.0
+		ID_BUTTON_8,  // Energy +0.5
+		ID_BUTTON_9,  // Energy  0.0
+		ID_BUTTON_10, // Energy -0.5
+		ID_BUTTON_11, // Energy -1.0
+		ID_BUTTON_12, // Energy -1.5
+		ID_BUTTON_13, // Energy -2.0
+		ID_BUTTON_14, // Energy -2.5
+		ID_BUTTON_15  // Energy -3.0
 	} ID_Interface;
 };
 
