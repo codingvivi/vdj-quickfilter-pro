@@ -2,15 +2,34 @@
 #include <cstdio>
 #include <regex>
 
+static const float ENERGY_OFFSETS[CMyPlugin8::ENERGY_BTN_COUNT] = {
+	 3.0f,  2.5f,  2.0f,  1.5f,  1.0f,  0.5f,  0.0f,
+	-0.5f, -1.0f, -1.5f, -2.0f, -2.5f, -3.0f
+};
+
+static const char* ENERGY_LONG_NAMES[CMyPlugin8::ENERGY_BTN_COUNT] = {
+	"Energy +3.0", "Energy +2.5", "Energy +2.0", "Energy +1.5",
+	"Energy +1.0", "Energy +0.5", "Energy 0.0",
+	"Energy -0.5", "Energy -1.0", "Energy -1.5",
+	"Energy -2.0", "Energy -2.5", "Energy -3.0"
+};
+
+static const char* ENERGY_SHORT_NAMES[CMyPlugin8::ENERGY_BTN_COUNT] = {
+	"E+3.0", "E+2.5", "E+2.0", "E+1.5", "E+1.0", "E+0.5", "E0",
+	"E-0.5", "E-1.0", "E-1.5", "E-2.0", "E-2.5", "E-3.0"
+};
 
 //-----------------------------------------------------------------------------
 HRESULT VDJ_API CMyPlugin8::OnLoad()
 {
 	m_Btn1State = 0;
-	m_Btn2State = 0;
-
 	DeclareParameterButton(&m_Btn1State, ID_BUTTON_1, "Refresh Quick Filters", "RFR");
-	DeclareParameterButton(&m_Btn2State, ID_BUTTON_2, "Toggle Key Difference Filter", "KeyDiff");
+
+	for (int i = 0; i < ENERGY_BTN_COUNT; ++i) {
+		m_EnergyBtns[i] = 0;
+		DeclareParameterButton(&m_EnergyBtns[i], ID_BUTTON_2 + i,
+		                       ENERGY_LONG_NAMES[i], ENERGY_SHORT_NAMES[i]);
+	}
 
 	return S_OK;
 }
@@ -44,20 +63,17 @@ HRESULT VDJ_API CMyPlugin8::OnGetUserInterface(TVdjPluginInterface8 *pluginInter
 //---------------------------------------------------------------------------
 HRESULT VDJ_API CMyPlugin8::OnParameter(int id)
 {
-	switch (id) {
-		case ID_BUTTON_1:
-			if (m_Btn1State == 1) {
-				// TODO: send the disengage + re-engage command sequence here
-				// e.g. SendCommand("quick_filter 1 & quick_filter 1");
-			}
-			break;
+	if (id == ID_BUTTON_1) {
+		if (m_Btn1State == 1) {
+			// TODO: send the disengage + re-engage command sequence here
+			// e.g. SendCommand("quick_filter 1 & quick_filter 1");
+		}
+		return S_OK;
+	}
 
-		case ID_BUTTON_2:
-			if (m_Btn2State == 1) {
-				std::string value = GetNumericTag("Pop");
-				if (!value.empty()) SendCommentTagFilter("Pop", value);
-			}
-			break;
+	if (id >= ID_BUTTON_2 && id <= ID_BUTTON_14) {
+		int i = id - ID_BUTTON_2;
+		if (m_EnergyBtns[i] == 1) MatchNumericTag("Energy", ENERGY_OFFSETS[i]);
 	}
 
 	return S_OK;
@@ -90,6 +106,23 @@ void CMyPlugin8::SendCommentTagFilter(const std::string& name, const std::string
 {
 	std::string cmd = "quick_filter 'Comment has tag #" + value + name + "'";
 	SendCommand(cmd.c_str());
+}
+
+//---------------------------------------------------------------------------
+void CMyPlugin8::MatchNumericTag(const std::string& name, float offset)
+{
+	std::string value = GetNumericTag(name);
+	if (value.empty()) return;
+
+	double n = std::stod(value) + offset;
+
+	char buf[32];
+	if (value.find('.') == std::string::npos && n == (int)n)
+		snprintf(buf, sizeof buf, "%0*d", (int)value.size(), (int)n);
+	else
+		snprintf(buf, sizeof buf, "%g", n);
+
+	SendCommentTagFilter(name, buf);
 }
 
 //---------------------------------------------------------------------------

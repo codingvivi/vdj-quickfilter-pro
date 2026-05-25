@@ -32,11 +32,15 @@ The VDJ SDK in `external/sdk/` is a COM-style C++ interface. `Main.cpp` exports 
 
 **Adding a button** — three places to touch:
 
-1. `ID_BUTTON_*` entry in the enum in `MyPlugin8.h` — enum order is the UI display order.
+1. `ID_BUTTON_N` entry in the enum in `MyPlugin8.h` — enum order is the UI display order. **Keep the `ID_BUTTON_N` naming pattern strictly sequential** (`ID_BUTTON_1`, `ID_BUTTON_2`, …); do not rename to semantic identifiers like `ID_ENERGY_BASE`.
 2. `int m_*` state field on `CMyPlugin8`.
 3. In `OnLoad`, init the field to `0` and call `DeclareParameterButton(&m_field, ID, "Long Name", "ShortName")`. Add the matching branch in `OnParameter` checking `id == ID && m_field == 1`.
 
-The short name is the VDJ mapping handle: `plugin "QFPro" "ShortName"`.
+**Mapping handles.** VDJ mappings reference plugin parameters two ways:
+- By 1-based position in the enum: `plugin "QFPro" 2` → `ID_BUTTON_2`.
+- By short name: `plugin "QFPro" "ShortName"`.
+
+Because the numeric form is the common one users will type, the `ID_BUTTON_N` identifier number must match the 1-based mapping number — that's why the sequential naming convention is load-bearing, not cosmetic.
 
 ## Stability rules
 
@@ -47,3 +51,11 @@ The short name is the VDJ mapping handle: `plugin "QFPro" "ShortName"`.
 ## Names
 
 Built binary: `QFPro` (matches `meson.build` and `justfile`). Long display name: "QuickFilter Pro".
+
+## References
+
+- [VDJScript verb list](https://virtualdj.com/manuals/virtualdj/appendix/vdjscriptverbs.html) — authoritative list of all script verbs (e.g. `quick_filter`, `masterdeck`, `get_activedeck`, `get_comment`). First place to check before guessing syntax for `GetInfo`/`GetStringInfo`/`SendCommand` arguments.
+- [VDJScript overview](https://virtualdj.com/wiki/vdjscript.html) — language reference: expression syntax, ternaries, deck scoping (`deck N <verb>`), boolean vs numeric verbs.
+- [Developers wiki](https://virtualdj.com/wiki/Developers) — entry point for SDK docs (plugin types, interface, build notes).
+
+VDJScript dual-use note: many verbs both *query* (when used in `GetInfo`/conditionals) and *act* (when sent via `SendCommand`). E.g. `masterdeck` returns true on the master deck when read, but pressing it makes that deck master.
