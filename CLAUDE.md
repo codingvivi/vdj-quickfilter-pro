@@ -46,12 +46,12 @@ Because the numeric form is the common one users will type, the `ID_BUTTON_N` id
 
 Buttons are declared in `MyPlugin8.cpp::OnLoad` in this order (= UI order = mapping number):
 
-| # | Short | Long | Behavior |
-|---|---|---|---|
-| 1 | `RFR` | Refresh Quick Filters | (TODO) disengage + re-engage active filter against the master deck. |
-| 2 | `Kill` | Kill Quick Filter | Sends `quick_filter off`, clears `m_ActiveFilter` cache, resets both range and stack state. |
-| 3–15 | `>=N.N`, `=0`, `=<N.N` | Energy >=N.N / =0 / =<N.N | **Range mode.** See below. |
-| 16–28 | `+N.N`, `0`, `-N.N` | Energy +N.N / 0 / -N.N | **Stack mode.** See below. |
+| # | Name (short = long) | Behavior |
+|---|---|---|
+| 1 | `RFR` (long: "Refresh Quick Filters") | (TODO) disengage + re-engage active filter against the master deck. |
+| 2 | `Kill` (long: "Kill Quick Filter") | Sends `quick_filter off`, clears `m_ActiveFilter` cache, resets both range and stack state. |
+| 3–15 | `E>=N.N`, `E=0`, `E=<N.N` | **Range mode.** See below. |
+| 16–28 | `E+N.N`, `E0`, `E-N.N` | **Stack mode.** See below. |
 
 Both modes target the master deck's `#NNEnergy` tag (parsed via `GetNumericTag("Energy")`) and produce a `quick_filter '<OR-joined clauses>'` expression. The two modes are mutually exclusive — pressing a button in one mode clears the other.
 
