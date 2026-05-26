@@ -44,16 +44,25 @@ Because the numeric form is the common one users will type, the `ID_BUTTON_N` id
 
 ## Current button layout & behavior
 
-106 buttons total: 2 control + 4 tag banks × 26. Declared in `MyPlugin8.cpp::OnLoad` in UI order = mapping number.
+107 buttons total: 3 control + 4 tag banks × 26. Declared in `MyPlugin8.cpp::OnLoad` in UI order = mapping number.
 
 | Buttons | Group | Behavior |
 |---|---|---|
-| 1 | `RFR` "Refresh Quick Filters" | (TODO) disengage + re-engage active filter against the master deck. |
-| 2 | `Kill` "Kill Quick Filter" | Sends `quick_filter off`, clears `m_ActiveFilter` cache, calls `Clear()` on every bank. |
-| 3–28 | Energy bank (`E>=N.N`, `E0`, `E=<N.N`, `E+N.N`, `E0`, `E-N.N`) | Range 3–15, Stack 16–28. |
-| 29–54 | Happy bank (`H...`) | Range 29–41, Stack 42–54. |
-| 55–80 | Dance bank (`D...`) | Range 55–67, Stack 68–80. |
-| 81–106 | Pop bank (`P...`) | Range 81–93, Stack 94–106. |
+| 1 | `Chk` "Refresh If Master Changed" | Auto-refresh callback for the VDJ-side `repeat_start_instant ... & load_pulse ? plugin "QFPro" 1` watcher. Compares master deck's filepath against `m_LastSeenFilePath`; calls `RebuildFilter()` only if it changed. Safe to fire on every load tick. |
+| 2 | `RFR` "Refresh Quick Filters" | Unconditional refresh — calls `RebuildFilter()`, which re-reads master tags and goes through the disengage/re-engage dance via `SendFilterExpression`. |
+| 3 | `Kill` "Kill Quick Filter" | Sends `quick_filter off`, clears `m_ActiveFilter` cache, calls `Clear()` on every bank. |
+| 4–29 | Energy bank (`E>=N.N`, `E0`, `E=<N.N`, `E+N.N`, `E0`, `E-N.N`) | Range 4–16, Stack 17–29. |
+| 30–55 | Happy bank (`H...`) | Range 30–42, Stack 43–55. |
+| 56–81 | Dance bank (`D...`) | Range 56–68, Stack 69–81. |
+| 82–107 | Pop bank (`P...`) | Range 82–94, Stack 95–107. |
+
+`m_LastSeenFilePath` is updated at the top of every `RebuildFilter()` call, so the Check cache stays current regardless of which path triggered the rebuild (bank press, manual Refresh, or Check itself).
+
+**Recommended ONINIT mapping snippet** (lives in the controller mapper, not the plugin):
+```
+repeat_start_instant "qfpro_watch" 100ms & load_pulse ? plugin "QFPro" 1 : nothing
+```
+Catches all load events (drag, controller, autoload). Does not catch master-deck *swaps* — for that, press button 2 (Refresh) manually after switching master.
 
 Each bank targets one numeric tag in the master deck's comment (e.g. `#03Energy`), parsed by `GetNumericTag(tagName)`. Within a bank, range and stack are mutually exclusive; across banks, contributions are AND-joined into a single `quick_filter` expression.
 

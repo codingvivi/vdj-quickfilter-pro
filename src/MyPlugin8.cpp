@@ -167,10 +167,12 @@ std::set<int> TagBank::ComputeDeltas() const
 
 HRESULT VDJ_API CMyPlugin8::OnLoad()
 {
-	m_Btn1State = 0;
-	m_KillState = 0;
-	DeclareParameterButton(&m_Btn1State, ID_BUTTON_1, "Refresh Quick Filters", "RFR");
-	DeclareParameterButton(&m_KillState, ID_BUTTON_2, "Kill Quick Filter",     "Kill");
+	m_CheckState   = 0;
+	m_RefreshState = 0;
+	m_KillState    = 0;
+	DeclareParameterButton(&m_CheckState,   ID_BUTTON_1, "Refresh If Master Changed", "Chk");
+	DeclareParameterButton(&m_RefreshState, ID_BUTTON_2, "Refresh Quick Filters",     "RFR");
+	DeclareParameterButton(&m_KillState,    ID_BUTTON_3, "Kill Quick Filter",         "Kill");
 
 	for (int b = 0; b < BANK_COUNT; ++b) {
 		m_banks[b].Init(BANK_TAG_NAMES[b]);
@@ -224,13 +226,20 @@ HRESULT VDJ_API CMyPlugin8::OnGetUserInterface(TVdjPluginInterface8 *pluginInter
 HRESULT VDJ_API CMyPlugin8::OnParameter(int id)
 {
 	if (id == ID_BUTTON_1) {
-		if (m_Btn1State == 1) {
-			// TODO: disengage + re-engage active filter (call RebuildFilter() after re-reading master)
+		// Auto-refresh callback: VDJ-side `repeat_start_instant ... & load_pulse ? plugin "QFPro" 1`
+		// fires this on every track load. Cheap path when nothing changed.
+		if (m_CheckState == 1) {
+			if (GetMasterDeckFilePath() != m_LastSeenFilePath) RebuildFilter();
 		}
 		return S_OK;
 	}
 
 	if (id == ID_BUTTON_2) {
+		if (m_RefreshState == 1) RebuildFilter();
+		return S_OK;
+	}
+
+	if (id == ID_BUTTON_3) {
 		if (m_KillState == 1) {
 			SendCommand("quick_filter off");
 			m_ActiveFilter.clear();
@@ -277,6 +286,19 @@ std::string CMyPlugin8::GetMasterDeckComment()
 
 	char query[32];
 	snprintf(query, sizeof query, "deck %d get_comment", deck);
+
+	char buf[1024] = {0};
+	GetStringInfo(query, buf, sizeof buf);
+	return std::string(buf);
+}
+
+std::string CMyPlugin8::GetMasterDeckFilePath()
+{
+	int deck = GetMasterDeck();
+	if (deck < 1) return std::string();
+
+	char query[32];
+	snprintf(query, sizeof query, "deck %d get_filepath", deck);
 
 	char buf[1024] = {0};
 	GetStringInfo(query, buf, sizeof buf);
@@ -344,6 +366,8 @@ void CMyPlugin8::SendFilterExpression(const std::string& expr)
 
 void CMyPlugin8::RebuildFilter()
 {
+	m_LastSeenFilePath = GetMasterDeckFilePath();
+
 	std::vector<std::string> bankExprs;
 
 	for (int b = 0; b < BANK_COUNT; ++b) {
