@@ -167,12 +167,14 @@ std::set<int> TagBank::ComputeDeltas() const
 
 HRESULT VDJ_API CMyPlugin8::OnLoad()
 {
-	m_CheckState   = 0;
-	m_RefreshState = 0;
-	m_KillState    = 0;
-	DeclareParameterButton(&m_CheckState,   ID_BUTTON_1, "Refresh If Master Changed", "Chk");
-	DeclareParameterButton(&m_RefreshState, ID_BUTTON_2, "Refresh Quick Filters",     "RFR");
-	DeclareParameterButton(&m_KillState,    ID_BUTTON_3, "Kill Quick Filter",         "Kill");
+	m_CheckState    = 0;
+	m_RefreshState  = 0;
+	m_KillState     = 0;
+	m_ReservedState = 0;
+	DeclareParameterButton(&m_CheckState,    ID_BUTTON_1, "Refresh If Master Changed", "Chk");
+	DeclareParameterButton(&m_RefreshState,  ID_BUTTON_2, "Refresh Quick Filters",     "RFR");
+	DeclareParameterButton(&m_KillState,     ID_BUTTON_3, "Kill Quick Filter",         "Kill");
+	DeclareParameterButton(&m_ReservedState, ID_BUTTON_4, "Reserved",                  "Rsv");
 
 	for (int b = 0; b < BANK_COUNT; ++b) {
 		m_banks[b].Init(BANK_TAG_NAMES[b]);

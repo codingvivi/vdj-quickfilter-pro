@@ -44,17 +44,18 @@ Because the numeric form is the common one users will type, the `ID_BUTTON_N` id
 
 ## Current button layout & behavior
 
-107 buttons total: 3 control + 4 tag banks × 26. Declared in `MyPlugin8.cpp::OnLoad` in UI order = mapping number.
+108 buttons total: 3 control + 1 reserved placeholder + 4 tag banks × 26. Declared in `MyPlugin8.cpp::OnLoad` in UI order = mapping number.
 
 | Buttons | Group | Behavior |
 |---|---|---|
 | 1 | `Chk` "Refresh If Master Changed" | Auto-refresh callback for the VDJ-side `repeat_start_instant ... & load_pulse ? plugin "QFPro" 1` watcher. Compares master deck's filepath against `m_LastSeenFilePath`; calls `RebuildFilter()` only if it changed. Safe to fire on every load tick. |
 | 2 | `RFR` "Refresh Quick Filters" | Unconditional refresh — calls `RebuildFilter()`, which re-reads master tags and goes through the disengage/re-engage dance via `SendFilterExpression`. |
 | 3 | `Kill` "Kill Quick Filter" | Sends `quick_filter off`, clears `m_ActiveFilter` cache, calls `Clear()` on every bank. |
-| 4–29 | Energy bank (`E>=N.N`, `E0`, `E=<N.N`, `E+N.N`, `E0`, `E-N.N`) | Range 4–16, Stack 17–29. |
-| 30–55 | Happy bank (`H...`) | Range 30–42, Stack 43–55. |
-| 56–81 | Dance bank (`D...`) | Range 56–68, Stack 69–81. |
-| 82–107 | Pop bank (`P...`) | Range 82–94, Stack 95–107. |
+| 4 | `Rsv` "Reserved" | No-op placeholder. Slot exists so a future control button can be added here without shifting bank mapping numbers (which would break user controller mappings). When repurposing, rename in-place and add an `OnParameter` branch — do not insert before it. |
+| 5–30 | Energy bank (`E>=N.N`, `E0`, `E=<N.N`, `E+N.N`, `E0`, `E-N.N`) | Range 5–17, Stack 18–30. |
+| 31–56 | Happy bank (`H...`) | Range 31–43, Stack 44–56. |
+| 57–82 | Dance bank (`D...`) | Range 57–69, Stack 70–82. |
+| 83–108 | Pop bank (`P...`) | Range 83–95, Stack 96–108. |
 
 `m_LastSeenFilePath` is updated at the top of every `RebuildFilter()` call, so the Check cache stays current regardless of which path triggered the rebuild (bank press, manual Refresh, or Check itself).
 
