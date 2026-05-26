@@ -5,29 +5,32 @@
 #include <set>
 #include <string>
 
-// One bank of 25 buttons (12 range + 13 stack) tied to a single numeric comment tag (e.g. "Energy").
-// Range has no 0 button — stack's 0 button is the sole way to engage just the master value.
+// One bank of 26 buttons (13 range + 13 stack) tied to a single numeric comment tag (e.g. "Energy").
+// Both range and stack have a "0" button in the middle. They are independent — stack `0` adds master
+// to an additive selection; range `0` is the implicit start of both range sides (or stands alone).
 struct TagBank
 {
-	static const int RANGE_BTN_COUNT = 12;
+	static const int RANGE_BTN_COUNT = 13;
 	static const int STACK_BTN_COUNT = 13;
 	static const int TOTAL_BTN_COUNT = RANGE_BTN_COUNT + STACK_BTN_COUNT;
+	static const int RANGE_ZERO_IDX  = 6; // index of the "0" range button
 
 	std::string tagName;
 	int  rangeBtns[RANGE_BTN_COUNT];   // SDK-owned momentary state
 	int  stackBtns[STACK_BTN_COUNT];
 
-	// Range mode: per-side peak overwrite. No zero button on this side.
-	int  posPeakHs;     // 0..6 half-steps (0 = side off)
+	// Range mode: per-side peak overwrite, plus a standalone-zero latch.
+	int  posPeakHs;          // 0..6 half-steps (0 = side off)
 	int  negPeakHs;
+	bool zeroRangeEngaged;   // standalone "0" engaged with no pos/neg side. Implicitly true whenever any side is non-zero (AnyRangeEngaged covers both).
 
 	// Stack mode: per-button latch; each contributes its single half-step value.
 	bool stackEngaged[STACK_BTN_COUNT];
 
 	void Init(const std::string& name);
 	void Clear();
-	void HandleRangePress(int idx);  // idx 0..11
-	void HandleStackPress(int idx);  // idx 0..12
+	void HandleRangePress(int idx);  // idx 0..12
+	void HandleStackPress(int idx);  // idx 0..11
 	bool AnyRangeEngaged() const;
 	bool AnyStackEngaged() const;
 	bool AnyEngaged() const { return AnyRangeEngaged() || AnyStackEngaged(); }
@@ -66,7 +69,7 @@ protected:
 		ID_BUTTON_1,   // refresh
 		ID_BUTTON_2,   // kill
 
-		// -- Bank 0: Energy (buttons 3-27) --
+		// -- Bank 0: Energy (buttons 3-28) --
 		// range
 		ID_BUTTON_3,   // E>=3.0
 		ID_BUTTON_4,   // E>=2.5
@@ -74,113 +77,117 @@ protected:
 		ID_BUTTON_6,   // E>=1.5
 		ID_BUTTON_7,   // E>=1.0
 		ID_BUTTON_8,   // E>=0.5
-		ID_BUTTON_9,   // E=<0.5
-		ID_BUTTON_10,  // E=<1.0
-		ID_BUTTON_11,  // E=<1.5
-		ID_BUTTON_12,  // E=<2.0
-		ID_BUTTON_13,  // E=<2.5
-		ID_BUTTON_14,  // E=<3.0
+		ID_BUTTON_9,   // E0  (range)
+		ID_BUTTON_10,  // E=<0.5
+		ID_BUTTON_11,  // E=<1.0
+		ID_BUTTON_12,  // E=<1.5
+		ID_BUTTON_13,  // E=<2.0
+		ID_BUTTON_14,  // E=<2.5
+		ID_BUTTON_15,  // E=<3.0
 		// stack
-		ID_BUTTON_15,  // E+3.0
-		ID_BUTTON_16,  // E+2.5
-		ID_BUTTON_17,  // E+2.0
-		ID_BUTTON_18,  // E+1.5
-		ID_BUTTON_19,  // E+1.0
-		ID_BUTTON_20,  // E+0.5
-		ID_BUTTON_21,  // E0
-		ID_BUTTON_22,  // E-0.5
-		ID_BUTTON_23,  // E-1.0
-		ID_BUTTON_24,  // E-1.5
-		ID_BUTTON_25,  // E-2.0
-		ID_BUTTON_26,  // E-2.5
-		ID_BUTTON_27,  // E-3.0
+		ID_BUTTON_16,  // E+3.0
+		ID_BUTTON_17,  // E+2.5
+		ID_BUTTON_18,  // E+2.0
+		ID_BUTTON_19,  // E+1.5
+		ID_BUTTON_20,  // E+1.0
+		ID_BUTTON_21,  // E+0.5
+		ID_BUTTON_22,  // E0  (stack)
+		ID_BUTTON_23,  // E-0.5
+		ID_BUTTON_24,  // E-1.0
+		ID_BUTTON_25,  // E-1.5
+		ID_BUTTON_26,  // E-2.0
+		ID_BUTTON_27,  // E-2.5
+		ID_BUTTON_28,  // E-3.0
 
-		// -- Bank 1: Happy (buttons 28-52) --
+		// -- Bank 1: Happy (buttons 29-54) --
 		// range
-		ID_BUTTON_28,  // H>=3.0
-		ID_BUTTON_29,  // H>=2.5
-		ID_BUTTON_30,  // H>=2.0
-		ID_BUTTON_31,  // H>=1.5
-		ID_BUTTON_32,  // H>=1.0
-		ID_BUTTON_33,  // H>=0.5
-		ID_BUTTON_34,  // H=<0.5
-		ID_BUTTON_35,  // H=<1.0
-		ID_BUTTON_36,  // H=<1.5
-		ID_BUTTON_37,  // H=<2.0
-		ID_BUTTON_38,  // H=<2.5
-		ID_BUTTON_39,  // H=<3.0
+		ID_BUTTON_29,  // H>=3.0
+		ID_BUTTON_30,  // H>=2.5
+		ID_BUTTON_31,  // H>=2.0
+		ID_BUTTON_32,  // H>=1.5
+		ID_BUTTON_33,  // H>=1.0
+		ID_BUTTON_34,  // H>=0.5
+		ID_BUTTON_35,  // H0  (range)
+		ID_BUTTON_36,  // H=<0.5
+		ID_BUTTON_37,  // H=<1.0
+		ID_BUTTON_38,  // H=<1.5
+		ID_BUTTON_39,  // H=<2.0
+		ID_BUTTON_40,  // H=<2.5
+		ID_BUTTON_41,  // H=<3.0
 		// stack
-		ID_BUTTON_40,  // H+3.0
-		ID_BUTTON_41,  // H+2.5
-		ID_BUTTON_42,  // H+2.0
-		ID_BUTTON_43,  // H+1.5
-		ID_BUTTON_44,  // H+1.0
-		ID_BUTTON_45,  // H+0.5
-		ID_BUTTON_46,  // H0
-		ID_BUTTON_47,  // H-0.5
-		ID_BUTTON_48,  // H-1.0
-		ID_BUTTON_49,  // H-1.5
-		ID_BUTTON_50,  // H-2.0
-		ID_BUTTON_51,  // H-2.5
-		ID_BUTTON_52,  // H-3.0
+		ID_BUTTON_42,  // H+3.0
+		ID_BUTTON_43,  // H+2.5
+		ID_BUTTON_44,  // H+2.0
+		ID_BUTTON_45,  // H+1.5
+		ID_BUTTON_46,  // H+1.0
+		ID_BUTTON_47,  // H+0.5
+		ID_BUTTON_48,  // H0  (stack)
+		ID_BUTTON_49,  // H-0.5
+		ID_BUTTON_50,  // H-1.0
+		ID_BUTTON_51,  // H-1.5
+		ID_BUTTON_52,  // H-2.0
+		ID_BUTTON_53,  // H-2.5
+		ID_BUTTON_54,  // H-3.0
 
-		// -- Bank 2: Dance (buttons 53-77) --
+		// -- Bank 2: Dance (buttons 55-80) --
 		// range
-		ID_BUTTON_53,  // D>=3.0
-		ID_BUTTON_54,  // D>=2.5
-		ID_BUTTON_55,  // D>=2.0
-		ID_BUTTON_56,  // D>=1.5
-		ID_BUTTON_57,  // D>=1.0
-		ID_BUTTON_58,  // D>=0.5
-		ID_BUTTON_59,  // D=<0.5
-		ID_BUTTON_60,  // D=<1.0
-		ID_BUTTON_61,  // D=<1.5
-		ID_BUTTON_62,  // D=<2.0
-		ID_BUTTON_63,  // D=<2.5
-		ID_BUTTON_64,  // D=<3.0
+		ID_BUTTON_55,  // D>=3.0
+		ID_BUTTON_56,  // D>=2.5
+		ID_BUTTON_57,  // D>=2.0
+		ID_BUTTON_58,  // D>=1.5
+		ID_BUTTON_59,  // D>=1.0
+		ID_BUTTON_60,  // D>=0.5
+		ID_BUTTON_61,  // D0  (range)
+		ID_BUTTON_62,  // D=<0.5
+		ID_BUTTON_63,  // D=<1.0
+		ID_BUTTON_64,  // D=<1.5
+		ID_BUTTON_65,  // D=<2.0
+		ID_BUTTON_66,  // D=<2.5
+		ID_BUTTON_67,  // D=<3.0
 		// stack
-		ID_BUTTON_65,  // D+3.0
-		ID_BUTTON_66,  // D+2.5
-		ID_BUTTON_67,  // D+2.0
-		ID_BUTTON_68,  // D+1.5
-		ID_BUTTON_69,  // D+1.0
-		ID_BUTTON_70,  // D+0.5
-		ID_BUTTON_71,  // D0
-		ID_BUTTON_72,  // D-0.5
-		ID_BUTTON_73,  // D-1.0
-		ID_BUTTON_74,  // D-1.5
-		ID_BUTTON_75,  // D-2.0
-		ID_BUTTON_76,  // D-2.5
-		ID_BUTTON_77,  // D-3.0
+		ID_BUTTON_68,  // D+3.0
+		ID_BUTTON_69,  // D+2.5
+		ID_BUTTON_70,  // D+2.0
+		ID_BUTTON_71,  // D+1.5
+		ID_BUTTON_72,  // D+1.0
+		ID_BUTTON_73,  // D+0.5
+		ID_BUTTON_74,  // D0  (stack)
+		ID_BUTTON_75,  // D-0.5
+		ID_BUTTON_76,  // D-1.0
+		ID_BUTTON_77,  // D-1.5
+		ID_BUTTON_78,  // D-2.0
+		ID_BUTTON_79,  // D-2.5
+		ID_BUTTON_80,  // D-3.0
 
-		// -- Bank 3: Pop (buttons 78-102) --
+		// -- Bank 3: Pop (buttons 81-106) --
 		// range
-		ID_BUTTON_78,  // P>=3.0
-		ID_BUTTON_79,  // P>=2.5
-		ID_BUTTON_80,  // P>=2.0
-		ID_BUTTON_81,  // P>=1.5
-		ID_BUTTON_82,  // P>=1.0
-		ID_BUTTON_83,  // P>=0.5
-		ID_BUTTON_84,  // P=<0.5
-		ID_BUTTON_85,  // P=<1.0
-		ID_BUTTON_86,  // P=<1.5
-		ID_BUTTON_87,  // P=<2.0
-		ID_BUTTON_88,  // P=<2.5
-		ID_BUTTON_89,  // P=<3.0
+		ID_BUTTON_81,  // P>=3.0
+		ID_BUTTON_82,  // P>=2.5
+		ID_BUTTON_83,  // P>=2.0
+		ID_BUTTON_84,  // P>=1.5
+		ID_BUTTON_85,  // P>=1.0
+		ID_BUTTON_86,  // P>=0.5
+		ID_BUTTON_87,  // P0  (range)
+		ID_BUTTON_88,  // P=<0.5
+		ID_BUTTON_89,  // P=<1.0
+		ID_BUTTON_90,  // P=<1.5
+		ID_BUTTON_91,  // P=<2.0
+		ID_BUTTON_92,  // P=<2.5
+		ID_BUTTON_93,  // P=<3.0
 		// stack
-		ID_BUTTON_90,  // P+3.0
-		ID_BUTTON_91,  // P+2.5
-		ID_BUTTON_92,  // P+2.0
-		ID_BUTTON_93,  // P+1.5
-		ID_BUTTON_94,  // P+1.0
-		ID_BUTTON_95,  // P+0.5
-		ID_BUTTON_96,  // P0
-		ID_BUTTON_97,  // P-0.5
-		ID_BUTTON_98,  // P-1.0
-		ID_BUTTON_99,  // P-1.5
-		ID_BUTTON_100, // P-2.0
-		ID_BUTTON_101, // P-2.5
-		ID_BUTTON_102  // P-3.0
+		ID_BUTTON_94,  // P+3.0
+		ID_BUTTON_95,  // P+2.5
+		ID_BUTTON_96,  // P+2.0
+		ID_BUTTON_97,  // P+1.5
+		ID_BUTTON_98,  // P+1.0
+		ID_BUTTON_99,  // P+0.5
+		ID_BUTTON_100, // P0  (stack)
+		ID_BUTTON_101, // P-0.5
+		ID_BUTTON_102, // P-1.0
+		ID_BUTTON_103, // P-1.5
+		ID_BUTTON_104, // P-2.0
+		ID_BUTTON_105, // P-2.5
+		ID_BUTTON_106  // P-3.0
 	} ID_Interface;
 };
 

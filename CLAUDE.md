@@ -44,16 +44,16 @@ Because the numeric form is the common one users will type, the `ID_BUTTON_N` id
 
 ## Current button layout & behavior
 
-102 buttons total: 2 control + 4 tag banks × 25. Declared in `MyPlugin8.cpp::OnLoad` in UI order = mapping number.
+106 buttons total: 2 control + 4 tag banks × 26. Declared in `MyPlugin8.cpp::OnLoad` in UI order = mapping number.
 
 | Buttons | Group | Behavior |
 |---|---|---|
 | 1 | `RFR` "Refresh Quick Filters" | (TODO) disengage + re-engage active filter against the master deck. |
 | 2 | `Kill` "Kill Quick Filter" | Sends `quick_filter off`, clears `m_ActiveFilter` cache, calls `Clear()` on every bank. |
-| 3–27 | Energy bank (`E>=N.N`, `E=<N.N`, `E+N.N`, `E0`, `E-N.N`) | Range 3–14, Stack 15–27. |
-| 28–52 | Happy bank (`H...`) | Range 28–39, Stack 40–52. |
-| 53–77 | Dance bank (`D...`) | Range 53–64, Stack 65–77. |
-| 78–102 | Pop bank (`P...`) | Range 78–89, Stack 90–102. |
+| 3–28 | Energy bank (`E>=N.N`, `E0`, `E=<N.N`, `E+N.N`, `E0`, `E-N.N`) | Range 3–15, Stack 16–28. |
+| 29–54 | Happy bank (`H...`) | Range 29–41, Stack 42–54. |
+| 55–80 | Dance bank (`D...`) | Range 55–67, Stack 68–80. |
+| 81–106 | Pop bank (`P...`) | Range 81–93, Stack 94–106. |
 
 Each bank targets one numeric tag in the master deck's comment (e.g. `#03Energy`), parsed by `GetNumericTag(tagName)`. Within a bank, range and stack are mutually exclusive; across banks, contributions are AND-joined into a single `quick_filter` expression.
 
@@ -61,22 +61,24 @@ Each bank targets one numeric tag in the master deck's comment (e.g. `#03Energy`
 
 State-only, no SDK calls. Each instance owns:
 - `tagName` — e.g. "Energy".
-- `rangeBtns[12]`, `stackBtns[13]` — SDK-owned momentary press state.
+- `rangeBtns[13]`, `stackBtns[13]` — SDK-owned momentary press state.
 - `posPeakHs`, `negPeakHs` — current range peak per side, in half-steps (0..6).
+- `zeroRangeEngaged` — standalone-zero latch for range mode (true when 0 is engaged with no pos/neg side wider). Master (delta 0) is included whenever `AnyRangeEngaged()` is true — i.e. any of pos/neg/zero is on.
 - `stackEngaged[13]` — per-button latch for stack mode.
 
 Methods: `Init`, `Clear`, `HandleRangePress(idx)`, `HandleStackPress(idx)`, `AnyRangeEngaged`, `AnyStackEngaged`, `AnyEngaged`, `ComputeDeltas()` (returns the union of half-step offsets relative to master).
 
-### Range mode (12 buttons per bank, no `=0`)
+### Range mode (13 buttons per bank, includes `0` at index 6)
 
-- Press `>=N` → `posPeakHs = N*2`, overwriting any prior positive peak. Contribution: half-steps `1..posPeakHs` (= master+0.5 .. master+N). Master itself is NOT included.
+- Press `>=N` → `posPeakHs = N*2`, overwriting any prior positive peak. Contribution: half-steps `1..posPeakHs` (= master+0.5 .. master+N).
 - Press the current positive peak again → `posPeakHs = 0`, positive side cleared. Negative side untouched.
 - Same rules mirrored for `=<N` / `negPeakHs`.
-- There is no range `=0` button — the stack `0` button is the only way to engage just the master value.
+- Press `0`: if either side is wider than 0, shrink both sides to 0 (`posPeakHs = negPeakHs = 0`, `zeroRangeEngaged = true` → bank contributes just master). If only `0` was engaged, press turns the bank off. Otherwise (nothing in range mode active) engages just `0`.
+- **Master (delta 0) is included whenever any range side is active** — i.e. `0` is the implicit start of both sides; pressing `>=N` or `=<N` automatically engages 0 as well.
 
 ### Stack mode (13 buttons per bank, includes `0`)
 
-Per-button latch in `stackEngaged[i]`. Each engaged button contributes only its single half-step value (not a range). Press toggles. The `0` button contributes the master value itself.
+Per-button latch in `stackEngaged[i]`. Each engaged button contributes only its single half-step value (not a range). Press toggles. The stack `0` button contributes the master value itself — use it to include master in an additive selection (e.g. `{master, +1.0, -2.0}`). Stack `0` and range `0` are independent buttons: stack `0` adds master to a stack selection; range `0` is part of the range-mode state machine and turns off the bank when toggled off alone.
 
 ### Mutual exclusion (within a bank)
 
@@ -113,6 +115,7 @@ Per bank, 15 vars (4 banks × 15 = 60 total):
 |---|---|---|
 | `$qfpro_<x>_pos` | float | signed positive-side peak, `0..3.0` (`0` = side off) |
 | `$qfpro_<x>_neg` | float | signed negative-side peak, `-3.0..0` (`0` = side off) |
+| `$qfpro_<x>_r_0` | 0/1 | range `0` LED — lit whenever `AnyRangeEngaged()` (standalone-zero or either side > 0) |
 | `$qfpro_<x>_s_<suffix>` | 0/1 | stack-button latch, one per stack button |
 
 `<x>` is the lowercased first char of `tagName` (`e`, `h`, `d`, `p`). Stack suffixes are var-name-safe versions of `STACK_SUFFIX`: `p30 p25 p20 p15 p10 p05 0 n05 n10 n15 n20 n25 n30` (kept in `STACK_VAR_SUFFIX`).
@@ -123,9 +126,11 @@ Per bank, 15 vars (4 banks × 15 = 60 total):
 - `OnParameter` Kill branch, for all banks after `Clear()`.
 
 **LED mapping recipes** (use these in the controller mapper, not in the plugin):
-- Stack: `var '$qfpro_e_s_0' ? on : off`
-- Range positive: `var_greater_or_equal '$qfpro_e_pos' 1.5 ? on : off`
-- Range negative: `var_smaller_or_equal '$qfpro_e_neg' -2.0 ? on : off`
+- Stack `E+0.5`: `var '$qfpro_e_s_p05' ? on : off`
+- Stack `E0`: `var '$qfpro_e_s_0' ? on : off`
+- Range `E0`: `var '$qfpro_e_r_0' ? on : off`
+- Range positive `E>=1.5`: `var_greater_or_equal '$qfpro_e_pos' 1.5 ? on : off`
+- Range negative `E=<2.0`: `var_smaller_or_equal '$qfpro_e_neg' -2.0 ? on : off`
 
 VDJ verbs in use: `set '$name' <num>` to write, `var`/`var_equal`/`var_greater_or_equal`/`var_smaller_or_equal`/`get_var` to read. No `set_var` verb exists — `set` is the only writer.
 

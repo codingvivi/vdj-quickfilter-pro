@@ -3,9 +3,9 @@
 #include <cstdio>
 #include <regex>
 
-// Range offsets (12 entries — no 0); index 0 = +3.0 peak, index 11 = -3.0.
+// Range offsets (13 entries — index 6 is the standalone "0"); index 0 = +3.0 peak, index 12 = -3.0.
 static const float RANGE_OFFSETS[TagBank::RANGE_BTN_COUNT] = {
-	 3.0f,  2.5f,  2.0f,  1.5f,  1.0f,  0.5f,
+	 3.0f,  2.5f,  2.0f,  1.5f,  1.0f,  0.5f,  0.0f,
 	-0.5f, -1.0f, -1.5f, -2.0f, -2.5f, -3.0f
 };
 
@@ -16,7 +16,7 @@ static const float STACK_OFFSETS[TagBank::STACK_BTN_COUNT] = {
 };
 
 static const char* RANGE_SUFFIX[TagBank::RANGE_BTN_COUNT] = {
-	">=3.0", ">=2.5", ">=2.0", ">=1.5", ">=1.0", ">=0.5",
+	">=3.0", ">=2.5", ">=2.0", ">=1.5", ">=1.0", ">=0.5", "0",
 	"=<0.5", "=<1.0", "=<1.5", "=<2.0", "=<2.5", "=<3.0"
 };
 
@@ -83,6 +83,7 @@ void TagBank::Init(const std::string& name)
 	tagName = name;
 	posPeakHs = 0;
 	negPeakHs = 0;
+	zeroRangeEngaged = false;
 	for (int i = 0; i < RANGE_BTN_COUNT; ++i) rangeBtns[i] = 0;
 	for (int i = 0; i < STACK_BTN_COUNT; ++i) { stackBtns[i] = 0; stackEngaged[i] = false; }
 }
@@ -91,12 +92,13 @@ void TagBank::Clear()
 {
 	posPeakHs = 0;
 	negPeakHs = 0;
+	zeroRangeEngaged = false;
 	for (int i = 0; i < STACK_BTN_COUNT; ++i) stackEngaged[i] = false;
 }
 
 bool TagBank::AnyRangeEngaged() const
 {
-	return posPeakHs > 0 || negPeakHs > 0;
+	return posPeakHs > 0 || negPeakHs > 0 || zeroRangeEngaged;
 }
 
 bool TagBank::AnyStackEngaged() const
@@ -112,6 +114,19 @@ void TagBank::HandleRangePress(int idx)
 		for (int i = 0; i < STACK_BTN_COUNT; ++i) stackEngaged[i] = false;
 	}
 
+	if (idx == RANGE_ZERO_IDX) {
+		// "0" range: if either side is wider than 0, shrink both to 0 (keeping master engaged).
+		// If only 0 was engaged, pressing turns the bank off. Otherwise engage just 0.
+		if (posPeakHs > 0 || negPeakHs > 0) {
+			posPeakHs = 0;
+			negPeakHs = 0;
+			zeroRangeEngaged = true;
+		} else {
+			zeroRangeEngaged = !zeroRangeEngaged;
+		}
+		return;
+	}
+
 	float off = RANGE_OFFSETS[idx];
 	int hs = (int)((off < 0 ? -off : off) * 2);
 
@@ -124,6 +139,7 @@ void TagBank::HandleStackPress(int idx)
 	if (AnyRangeEngaged()) {
 		posPeakHs = 0;
 		negPeakHs = 0;
+		zeroRangeEngaged = false;
 	}
 	stackEngaged[idx] = !stackEngaged[idx];
 }
@@ -131,6 +147,7 @@ void TagBank::HandleStackPress(int idx)
 std::set<int> TagBank::ComputeDeltas() const
 {
 	std::set<int> deltas;
+	if (AnyRangeEngaged()) deltas.insert(0);
 	for (int d = 1; d <= posPeakHs; ++d) deltas.insert(d);
 	for (int d = 1; d <= negPeakHs; ++d) deltas.insert(-d);
 
@@ -138,9 +155,8 @@ std::set<int> TagBank::ComputeDeltas() const
 		if (!stackEngaged[i]) continue;
 		float off = STACK_OFFSETS[i];
 		int hs = (int)((off < 0 ? -off : off) * 2);
-		if      (off > 0) deltas.insert(hs);
-		else if (off < 0) deltas.insert(-hs);
-		else              deltas.insert(0);
+		if (off > 0) deltas.insert(hs);
+		else         deltas.insert(-hs);
 	}
 	return deltas;
 }
@@ -283,7 +299,8 @@ std::string CMyPlugin8::GetNumericTag(const std::string& name)
 // mappings can light LEDs without needing to query the plugin. Var names:
 //   $qfpro_<x>_pos   signed positive-side peak, 0..3.0
 //   $qfpro_<x>_neg   signed negative-side peak, -3.0..0
-//   $qfpro_<x>_s_<suffix>  one 0/1 per stack button (suffix = p30..p05, 0, n05..n30)
+//   $qfpro_<x>_r_0   0/1, lit whenever any range side (including standalone 0) is engaged
+//   $qfpro_<x>_s_<suffix>  one 0/1 per stack button (suffix = p30..p05, n05..n30)
 // where <x> is the lowercased first char of the tag name (e=Energy, h=Happy, ...).
 void CMyPlugin8::SyncBankVars(int bankIdx)
 {
@@ -299,6 +316,8 @@ void CMyPlugin8::SyncBankVars(int bankIdx)
 	snprintf(cmd, sizeof cmd, "set '$qfpro_%c_pos' %g", lower, pos);
 	SendCommand(cmd);
 	snprintf(cmd, sizeof cmd, "set '$qfpro_%c_neg' %g", lower, neg);
+	SendCommand(cmd);
+	snprintf(cmd, sizeof cmd, "set '$qfpro_%c_r_0' %d", lower, bank.AnyRangeEngaged() ? 1 : 0);
 	SendCommand(cmd);
 
 	for (int i = 0; i < TagBank::STACK_BTN_COUNT; ++i) {
