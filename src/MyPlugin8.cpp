@@ -1,4 +1,5 @@
 #include "MyPlugin8.h"
+#include <cctype>
 #include <cstdio>
 #include <regex>
 
@@ -22,6 +23,12 @@ static const char* RANGE_SUFFIX[TagBank::RANGE_BTN_COUNT] = {
 static const char* STACK_SUFFIX[TagBank::STACK_BTN_COUNT] = {
 	"+3.0", "+2.5", "+2.0", "+1.5", "+1.0", "+0.5", "0",
 	"-0.5", "-1.0", "-1.5", "-2.0", "-2.5", "-3.0"
+};
+
+// VDJ-var-name-safe suffixes for the 13 stack buttons (no '+'/'-'/'.').
+static const char* STACK_VAR_SUFFIX[TagBank::STACK_BTN_COUNT] = {
+	"p30", "p25", "p20", "p15", "p10", "p05", "0",
+	"n05", "n10", "n15", "n20", "n25", "n30"
 };
 
 // Bank tag names, in display order.
@@ -167,6 +174,8 @@ HRESULT VDJ_API CMyPlugin8::OnLoad()
 			                       bankBase + TagBank::RANGE_BTN_COUNT + i,
 			                       g_stackLongNames[b][i], g_stackShortNames[b][i]);
 		}
+
+		SyncBankVars(b);
 	}
 
 	return S_OK;
@@ -209,7 +218,10 @@ HRESULT VDJ_API CMyPlugin8::OnParameter(int id)
 		if (m_KillState == 1) {
 			SendCommand("quick_filter off");
 			m_ActiveFilter.clear();
-			for (int b = 0; b < BANK_COUNT; ++b) m_banks[b].Clear();
+			for (int b = 0; b < BANK_COUNT; ++b) {
+				m_banks[b].Clear();
+				SyncBankVars(b);
+			}
 		}
 		return S_OK;
 	}
@@ -230,6 +242,7 @@ HRESULT VDJ_API CMyPlugin8::OnParameter(int id)
 	if (isStack) bank.HandleStackPress(modeIdx);
 	else         bank.HandleRangePress(modeIdx);
 
+	SyncBankVars(bankIdx);
 	RebuildFilter();
 	return S_OK;
 }
@@ -264,6 +277,35 @@ std::string CMyPlugin8::GetNumericTag(const std::string& name)
 	if (std::regex_search(comment, match, pattern))
 		return match[1].str();
 	return std::string();
+}
+
+// Mirrors a bank's engaged state to global (non-persistent) VDJ vars so controller
+// mappings can light LEDs without needing to query the plugin. Var names:
+//   $qfpro_<x>_pos   signed positive-side peak, 0..3.0
+//   $qfpro_<x>_neg   signed negative-side peak, -3.0..0
+//   $qfpro_<x>_s_<suffix>  one 0/1 per stack button (suffix = p30..p05, 0, n05..n30)
+// where <x> is the lowercased first char of the tag name (e=Energy, h=Happy, ...).
+void CMyPlugin8::SyncBankVars(int bankIdx)
+{
+	TagBank& bank = m_banks[bankIdx];
+	if (bank.tagName.empty()) return;
+
+	char lower = (char)std::tolower((unsigned char)bank.tagName[0]);
+	char cmd[64];
+
+	float pos =  bank.posPeakHs * 0.5f;
+	float neg = -bank.negPeakHs * 0.5f;
+
+	snprintf(cmd, sizeof cmd, "set '$qfpro_%c_pos' %g", lower, pos);
+	SendCommand(cmd);
+	snprintf(cmd, sizeof cmd, "set '$qfpro_%c_neg' %g", lower, neg);
+	SendCommand(cmd);
+
+	for (int i = 0; i < TagBank::STACK_BTN_COUNT; ++i) {
+		snprintf(cmd, sizeof cmd, "set '$qfpro_%c_s_%s' %d",
+		         lower, STACK_VAR_SUFFIX[i], bank.stackEngaged[i] ? 1 : 0);
+		SendCommand(cmd);
+	}
 }
 
 void CMyPlugin8::SendFilterExpression(const std::string& expr)

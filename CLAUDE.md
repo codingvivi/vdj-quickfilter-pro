@@ -98,10 +98,36 @@ If no bank is engaged → re-sends the cached filter to clear and empties the ca
 ### Adding more banks
 
 1. Bump `CMyPlugin8::BANK_COUNT` in `MyPlugin8.h`.
-2. Append the tag name to `BANK_TAG_NAMES` in `MyPlugin8.cpp` (first character becomes the label prefix).
+2. Append the tag name to `BANK_TAG_NAMES` in `MyPlugin8.cpp` (first character becomes the label prefix, lowercased for VDJ var names).
 3. Extend the `ID_Interface` enum with 25 more sequential `ID_BUTTON_N` entries (with `// range` and `// stack` section markers).
 
-No changes to dispatch, mutual exclusion, or AND-combine — they scale on `BANK_COUNT`.
+No changes to dispatch, mutual exclusion, AND-combine, or var-sync — they scale on `BANK_COUNT`.
+
+## VDJ var mirroring (LED feedback)
+
+The unnamed `quick_filter '<expr>'` VDJ uses isn't queryable from a controller mapping, so the plugin **mirrors** its in-memory bank state into global non-persistent VDJScript vars (`$` prefix, no `@`). The plugin stays the source of truth; vars exist purely so mappings can light LEDs.
+
+Per bank, 15 vars (4 banks × 15 = 60 total):
+
+| Var | Type | Meaning |
+|---|---|---|
+| `$qfpro_<x>_pos` | float | signed positive-side peak, `0..3.0` (`0` = side off) |
+| `$qfpro_<x>_neg` | float | signed negative-side peak, `-3.0..0` (`0` = side off) |
+| `$qfpro_<x>_s_<suffix>` | 0/1 | stack-button latch, one per stack button |
+
+`<x>` is the lowercased first char of `tagName` (`e`, `h`, `d`, `p`). Stack suffixes are var-name-safe versions of `STACK_SUFFIX`: `p30 p25 p20 p15 p10 p05 0 n05 n10 n15 n20 n25 n30` (kept in `STACK_VAR_SUFFIX`).
+
+**Sync points** — `SyncBankVars(b)` is called from:
+- `OnLoad`, once per bank after `Init` (initializes all 60 vars to 0).
+- `OnParameter` after every bank press (only the affected bank — handlers never touch other banks).
+- `OnParameter` Kill branch, for all banks after `Clear()`.
+
+**LED mapping recipes** (use these in the controller mapper, not in the plugin):
+- Stack: `var '$qfpro_e_s_0' ? on : off`
+- Range positive: `var_greater_or_equal '$qfpro_e_pos' 1.5 ? on : off`
+- Range negative: `var_smaller_or_equal '$qfpro_e_neg' -2.0 ? on : off`
+
+VDJ verbs in use: `set '$name' <num>` to write, `var`/`var_equal`/`var_greater_or_equal`/`var_smaller_or_equal`/`get_var` to read. No `set_var` verb exists — `set` is the only writer.
 
 ## Stability rules
 
