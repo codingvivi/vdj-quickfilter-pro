@@ -48,8 +48,8 @@ Because the numeric form is the common one users will type, the `ID_BUTTON_N` id
 
 | Buttons | Group | Behavior |
 |---|---|---|
-| 1 | `Chk` "Refresh If Master Changed" | Auto-refresh callback for the VDJ-side `repeat_start_instant ... & load_pulse ? plugin "QFPro" 1` watcher. Compares master deck's filepath against `m_LastSeenFilePath`; calls `RebuildFilter()` only if it changed. Safe to fire on every load tick. |
-| 2 | `RFR` "Refresh Quick Filters" | Unconditional refresh — calls `RebuildFilter()`, which re-reads master tags and goes through the disengage/re-engage dance via `SendFilterExpression`. |
+| 1 | `Chk` "Refresh If Master Changed" | Auto-refresh callback for the VDJ-side `repeat_start_instant ... & load_pulse ? plugin "QFPro" 1` watcher. Compares master deck's filepath against `m_LastSeenFilePath`; if changed, calls `RebuildFilter()` *and* `RefreshNumberedFilters()`. Safe to fire on every load tick. |
+| 2 | `RFR` "Refresh Quick Filters" | Unconditional refresh — calls `RebuildFilter()` (re-reads master tags, disengage/re-engage dance via `SendFilterExpression`) *and* `RefreshNumberedFilters()`. |
 | 3 | `Kill` "Kill Quick Filter" | Sends `quick_filter off`, clears `m_ActiveFilter` cache, calls `Clear()` on every bank. |
 | 4 | `Rsv` "Reserved" | No-op placeholder. Slot exists so a future control button can be added here without shifting bank mapping numbers (which would break user controller mappings). When repurposing, rename in-place and add an `OnParameter` branch — do not insert before it. |
 | 5–30 | Energy bank (`E>=N.N`, `E0`, `E=<N.N`, `E+N.N`, `E0`, `E-N.N`) | Range 5–17, Stack 18–30. |
@@ -106,6 +106,14 @@ If no bank is engaged → re-sends the cached filter to clear and empties the ca
 ### Active-filter tracking
 
 `m_ActiveFilter` caches the last `quick_filter '<expr>'` string sent. To swap filters, `SendFilterExpression` re-sends the cached string (VDJ toggles same-expression off), then sends the new one. Same-expression re-send disengages without replacing. `quick_filter off` alone did **not** reliably clear custom expressions in testing, hence the cache-based dance.
+
+### Numbered quickfilter refresh
+
+VDJ users can also engage *numbered* quickfilters (`quick_filter N`, slot-based, defined in VDJ's UI) — these are orthogonal to the plugin's own custom expression and the plugin doesn't own their state. `RefreshNumberedFilters()` walks slots `1..MAX_NUMBERED_FILTERS`, exits early on the first `has_quick_filter N == false` (slots are sequential), and for the engaged one (queried via `GetInfo("quick_filter N", ...)`) sends two `quick_filter N` actions back-to-back: first tap disengages, second re-engages so VDJ re-evaluates against the new master. Mutex assumption: VDJ runs at most one quickfilter at a time, so we stop on the first engaged slot.
+
+Called from Check (when master filepath changes) and from Refresh — *not* from bank-button presses, which are about the plugin's own expression and don't imply the master changed.
+
+**Verb assumption to verify:** the manual lists `quick_filter` as Action only; the query usage is the standard VDJ dual-use pattern but undocumented for this verb. If `GetInfo("quick_filter N", &out)` always returns 0, this is a silent no-op. Verify after first build by engaging a numbered filter, loading a new track on master, and confirming the filter re-evaluates.
 
 ### Adding more banks
 

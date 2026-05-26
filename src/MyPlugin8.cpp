@@ -231,13 +231,19 @@ HRESULT VDJ_API CMyPlugin8::OnParameter(int id)
 		// Auto-refresh callback: VDJ-side `repeat_start_instant ... & load_pulse ? plugin "QFPro" 1`
 		// fires this on every track load. Cheap path when nothing changed.
 		if (m_CheckState == 1) {
-			if (GetMasterDeckFilePath() != m_LastSeenFilePath) RebuildFilter();
+			if (GetMasterDeckFilePath() != m_LastSeenFilePath) {
+				RebuildFilter();
+				RefreshNumberedFilters();
+			}
 		}
 		return S_OK;
 	}
 
 	if (id == ID_BUTTON_2) {
-		if (m_RefreshState == 1) RebuildFilter();
+		if (m_RefreshState == 1) {
+			RebuildFilter();
+			RefreshNumberedFilters();
+		}
 		return S_OK;
 	}
 
@@ -364,6 +370,35 @@ void CMyPlugin8::SendFilterExpression(const std::string& expr)
 
 	SendCommand(cmd.c_str());
 	m_ActiveFilter = cmd;
+}
+
+// Finds the currently-engaged numbered quickfilter (if any) and double-taps it so
+// VDJ re-evaluates it against the new master. Assumes:
+//   1. `has_quick_filter N` (Query, documented) is true iff slot N has a filter defined.
+//      Slots are sequential, so the first false ends iteration.
+//   2. `quick_filter N` works as a Query (undocumented dual-use) returning 1.0 when engaged.
+// VDJ runs at most one quickfilter at a time, so we expect 0 or 1 engaged slots and stop on
+// the first match. If assumption 2 turns out wrong (GetInfo always returns 0 for quick_filter N),
+// this becomes a silent no-op — verify after first build that an engaged numbered filter
+// actually refreshes on track load.
+void CMyPlugin8::RefreshNumberedFilters()
+{
+	for (int n = 1; n <= MAX_NUMBERED_FILTERS; ++n) {
+		char q[32];
+		snprintf(q, sizeof q, "has_quick_filter %d", n);
+		double exists = 0.0;
+		GetInfo(q, &exists);
+		if (exists < 0.5) break;
+
+		snprintf(q, sizeof q, "quick_filter %d", n);
+		double engaged = 0.0;
+		GetInfo(q, &engaged);
+		if (engaged < 0.5) continue;
+
+		SendCommand(q); // first tap: disengage
+		SendCommand(q); // second tap: re-engage against new master
+		break;          // mutex: only one slot can be engaged
+	}
 }
 
 void CMyPlugin8::RebuildFilter()

@@ -40,9 +40,10 @@ struct TagBank
 class CMyPlugin8 : public IVdjPlugin8
 {
 public:
-	static const int BANK_COUNT     = 4;
-	static const int CONTROL_BTNS   = 4;   // check + refresh + kill + 1 reserved slot
-	static const int FIRST_BANK_ID  = CONTROL_BTNS; // ID_BUTTON_5 (0-indexed enum value 4)
+	static const int BANK_COUNT             = 4;
+	static const int CONTROL_BTNS           = 4;   // check + refresh + kill + 1 reserved slot
+	static const int FIRST_BANK_ID          = CONTROL_BTNS; // ID_BUTTON_5 (0-indexed enum value 4)
+	static const int MAX_NUMBERED_FILTERS   = 64;  // safety cap; iteration exits early via has_quick_filter
 
 	HRESULT VDJ_API OnLoad();
 	HRESULT VDJ_API OnGetPluginInfo(TVdjPluginInfo8 *infos);
@@ -65,6 +66,7 @@ private:
 	std::string GetNumericTag(const std::string& name);
 	void SendFilterExpression(const std::string& expr);
 	void RebuildFilter(); // gathers each bank's clauses, AND-joins across banks, sends
+	void RefreshNumberedFilters(); // double-taps the engaged numbered quickfilter (if any) so it re-evaluates against new master
 	void SyncBankVars(int bankIdx); // mirrors bank state to global VDJ vars for LED feedback
 
 protected:
